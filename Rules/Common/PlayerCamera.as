@@ -11,6 +11,11 @@ int deathTime = 0;
 Vec3f deathLock;
 int helptime = 0;
 bool spectatorTeam;
+Vec2f ArbitraryMouseOffset = Vec2f(2.5f, 2.5f);
+const f32 FIRST_PERSON_EYE_HEIGHT = 16.0f;
+const f32 THIRD_PERSON_SEAT_OFFSET_X = 0.0f;
+const f32 THIRD_PERSON_SEAT_OFFSET_Y = 20.0f;
+const f32 THIRD_PERSON_SEAT_OFFSET_Z = -40.0f;
 
 void onInit(CRules@ this)
 {	
@@ -25,13 +30,13 @@ void onRestart(CRules@ this)
 
 void Reset(CRules@ this)
 {
-	SetTargetPlayer(null);
-	CCamera@ camera = getCamera();
-
-	if (camera !is null)
-	{
-		camera.setTarget(null);
-	}
+	//SetTargetPlayer(null);
+	//CCamera@ camera = getCamera();
+//
+	//if (camera !is null)
+	//{
+	//	camera.setTarget(null);
+	//}
 
 	helptime = 0;
 }
@@ -47,17 +52,18 @@ void onNewPlayerJoin(CRules@ this, CPlayer@ player)
 
 void onSetPlayer(CRules@ this, CBlob@ blob, CPlayer@ player)
 {	
-	if (player !is null && player is getLocalPlayer())
-	{
-		Blob3D@ blob3D; blob.get("blob3d", @blob3D);
-		Camera3D@ camera; player.get("Camera3D", @camera);
-		if (camera !is null && blob3D !is null)
-		{
-			//camera.setPosition(blob3D.getPosition()+camera.pos_offset);
-			camera.setTarget(blob3D);
-			//camera.mousecamstyle = 1; // follow
-		}
-	}
+	//if (player !is null && player is getLocalPlayer())
+	//{
+	//	Blob3D@ blob3D; getLocalPlayerBlob().get("blob3d", @blob3D);
+	//	Camera3D@ camera; player.get("Camera3D", @camera);
+	//	if (camera !is null && blob3D !is null)
+	//	{
+	//		print("target set");
+	//		//camera.setPosition(blob3D.getPosition()+camera.pos_offset);
+	//		camera.setTarget(@blob3D);
+	//		//camera.mousecamstyle = 1; // follow
+	//	}
+	//}
 }
 
 void onTick(CRules@ this)
@@ -70,7 +76,7 @@ void onTick(CRules@ this)
 		{
 			if (getLocalPlayerBlob() !is null)
 			{
-				FollowTarget(this);
+				FollowTarget(this, getLocalPlayerBlob());
 			}
 			else
 			{
@@ -219,7 +225,7 @@ void onRender(CRules@ this)
 			Vec3f pos = blob3d.getPosition();
 			GUI::DrawText("Pos = "+pos.toString(), Vec2f(0, 16), color_white);
 
-			Vec3f vel = blob3d.shape.getVelocity();
+			Vec3f vel = blob3d.rb.getVelocity();
 			GUI::DrawText("Vel = "+vel.toString(), Vec2f(0, 32), color_white);
 	    }	
 
@@ -355,12 +361,12 @@ void Spectator(CRules@ this)
 				}
 				if (controls.ActionKeyPressed(AK_MOVE_UP))
 				{
-					pos.z -= 5;
+					pos.z += 5;
 					SetTargetPlayer(null);
 				}
 				if (controls.ActionKeyPressed(AK_MOVE_DOWN))
 				{
-					pos.z += 5;
+					pos.z -= 5;
 					SetTargetPlayer(null);
 				}
 				if(controls.isKeyPressed(KEY_SPACE))
@@ -374,7 +380,7 @@ void Spectator(CRules@ this)
 					SetTargetPlayer(null);
 				}
 
-				pos.rotateXZ(dir.x);
+				pos.xzRotateBy(dir.x);
 				
 			    if(controls.isKeyJustReleased(KEY_LBUTTON))
 			    {
@@ -385,8 +391,8 @@ void Spectator(CRules@ this)
 				if (controls.isKeyJustPressed(KEY_LBUTTON))
 				{
 					Vec3f vec = Vec3f(0,0,99999999);
-					vec = rotateXYBy( vec, camera.getRotation().y);
-					vec.rotateXZ( camera.getRotation().x);
+					vec.yzRotateBy( camera.getRotation().y);
+					vec.xzRotateBy( camera.getRotation().x);
 			
 					Ray ray(camera.getPosition(), camera.getPosition()+vec);
 					
@@ -473,71 +479,87 @@ void Spectator(CRules@ this)
 				//	}
 				//}
 				camera.setPosition(camera.getPosition()+pos);
-				camera.setRotation(dir);
+				camera.setRotation(-dir);
 			}
 		}
 	}
 }
 
-void FollowTarget(CRules@ this)
+void FollowTarget(CRules@ this, CBlob@ lp)
 {
 	CPlayer@ player = getLocalPlayer();
 	if(player !is null)
 	{
-		Camera3D@ camera; player.get("Camera3D", @camera);
-		if (camera !is null)
-		{		    
-		    Blob3D@ targetblob3D = camera.getTarget();
-		    if (targetblob3D !is null)
-		    {
-			    if(isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !getHUD().hasButtons() && !player.getBlob().get_bool( "build menu open" ))
-				{
-					CControls@ controls = getControls();
-					Vec2f ScrMid = getDriver().getScreenCenterPos();
+		Camera3D@ camera;
+		player.get("Camera3D", @camera);
+		if (camera is null) { return; }	
 
-					if ((controls.getMouseScreenPos() - ScrMid).Length() < 1.5)
-					{ controls.setMousePosition(ScrMid); }
-					else
-					{ controls.setMousePosition(Vec2f_lerp(controls.getMouseScreenPos(), ScrMid, 0.75)); }	
 
-					Vec3f dir = targetblob3D.transform.Orientation.getXYZ();
-					Vec3f off = camera.pos_offset;
-					off = rotateYZBy( off, dir.y);	
-					off.rotateXZ(dir.x);	
-					Vec3f pos = targetblob3D.getPosition()+off;
+		CBlob@ localBlob = getLocalPlayerBlob();
+		Blob3D@ blob3d;
+		if (localBlob is null || !localBlob.get("blob3d", @blob3d)) { return; }
 
-					camera.setPosition(pos);
-					camera.setRotation(dir);
-					//targetblob3D.shape.setRotation(dir);	
-					//targetblob3D.shape.setAngleDegreesXZ( -dir.x  );
-				}				
+		const bool firstPersonCamera = IsFirstPersonCameraEnabled(this);
+		if (firstPersonCamera && !localBlob.isAttached())
+		{
+			camera.setTarget(null);
+			Vec3f dir = blob3d.transform.Orientation.getXYZ();
+			Vec3f eyePos = blob3d.getRenderPosition() + Vec3f(0.0f, FIRST_PERSON_EYE_HEIGHT, 0.0f);
+			camera.setPosition(eyePos);
+			camera.setRotation(dir);
+
+		    if(isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !getHUD().hasButtons() && !player.getBlob().get_bool( "build menu open" ))
+			{
+				CControls@ controls = getControls();
+
+				Vec2f ScrMid = getDriver().getScreenCenterPos();
+				ScrMid += ArbitraryMouseOffset; 
+				Vec2f mouseDistDelta = controls.getMouseScreenPos() - getDriver().getScreenCenterPos();
+
+				if (mouseDistDelta.Length() < 1.5)
+				{ controls.setMousePosition(ScrMid); }
+				else
+				{ controls.setMousePosition(Vec2f_lerp(controls.getMouseScreenPos(), ScrMid, 0.75)); }	
 			}
+
+			return;
+		}
+
+		camera.pos_offset = Vec3f(THIRD_PERSON_SEAT_OFFSET_X, THIRD_PERSON_SEAT_OFFSET_Y, THIRD_PERSON_SEAT_OFFSET_Z);
+	    Blob3D@ targetblob3D = camera.getTarget();
+		if (targetblob3D is null)
+		{
+			camera.setTarget(@blob3d);
+			@targetblob3D = blob3d;
+		}
+
+	    if (targetblob3D !is null)
+	    {
+			Vec3f off = camera.pos_offset;
+			Vec3f dir = targetblob3D.transform.Orientation.getXYZ();
+			camera.setRotation(-dir);
+			off.yzRotateBy(dir.y);
+			off.xzRotateBy(dir.x);
+
+		    if(isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !getHUD().hasButtons() && !player.getBlob().get_bool( "build menu open" ))
+			{
+				CControls@ controls = getControls();
+
+				Vec2f ScrMid = getDriver().getScreenCenterPos();
+				ScrMid += ArbitraryMouseOffset; 
+				Vec2f mouseDistDelta = controls.getMouseScreenPos() - getDriver().getScreenCenterPos();
+
+				if (mouseDistDelta.Length() < 1.5)
+				{ controls.setMousePosition(ScrMid); }
+				else
+				{ controls.setMousePosition(Vec2f_lerp(controls.getMouseScreenPos(), ScrMid, 0.75)); }	
+			}	
+
+			Vec3f desiredPos = targetblob3D.getRenderPosition() + off;
+			Vec3f currentPos = camera.getPosition();
+			currentPos += (desiredPos - currentPos) * 0.15f; //lerp for smoothing
+
+			camera.setPosition(currentPos);			
 		}
 	}
-}
-
-Vec3f rotateXYBy(Vec3f vec, float degrees, Vec3f center = Vec3f())
-{
-    float radians = degrees * Maths::Pi / 180.0f;
-    float cs = Maths::Cos(radians);
-    float sn = Maths::Sin(radians);
-    vec.x -= center.x;
-    vec.y -= center.z;
-    vec = Vec3f((vec.x*cs - vec.y*sn), (vec.x*sn + vec.y*cs), vec.z);
-    vec.x += center.x;
-    vec.y += center.z;
-    return vec;
-}
-
-Vec3f rotateYZBy(Vec3f vec, float degrees, Vec3f center = Vec3f())
-{
-    float radians = degrees * Maths::Pi / 180.0f;
-    float cs = Maths::Cos(radians);
-    float sn = Maths::Sin(radians);
-    vec.z -= center.z;
-    vec.y -= center.y;
-    vec = Vec3f(vec.x, (vec.y*cs - vec.z*sn), (vec.y*sn + vec.z*cs));
-    vec.z += center.z;
-    vec.y += center.y;
-    return vec;
 }

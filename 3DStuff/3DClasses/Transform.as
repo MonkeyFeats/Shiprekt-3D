@@ -23,6 +23,12 @@ shared class RigidTransform
         Orientation = orienation;
     }
 
+    RigidTransform(RigidTransform@ other)
+    {
+        Position = other.Position;
+        Orientation = other.Orientation;
+    }
+
     /// Gets the orientation matrix created from the orientation of the rigid transform.
     MatrixR OrientationMatrix
     {
@@ -46,8 +52,19 @@ shared class RigidTransform
         }
     }  
 
-    /// Gets the identity rigid transform.
-    RigidTransform Identity 
+    ///Gets a blank identity
+    RigidTransform Identity
+    {
+        get
+        {
+            return RigidTransform(
+                Vec3f(0,0,0),
+                Quaternion()
+            );
+        }
+    }
+    /// Gets a copy of the rigid transform.
+    RigidTransform GetIdentity 
     {
         get
         {
@@ -55,6 +72,36 @@ shared class RigidTransform
             return t;
         }
     }
+
+
+
+    Vec3f Forward()
+    {
+        return Orientation.Transform(Vec3f(0,0,1));
+    }
+
+    Vec3f Right()
+    {
+        return Orientation.Transform(Vec3f(1,0,0));
+    }
+
+    Vec3f Up()
+    {
+        return Orientation.Transform(Vec3f(0,1,0));
+    }
+
+//    RigidTransform Lerp(RigidTransform target, float t)
+//    {
+//        RigidTransform result;
+//
+//        result.Position =
+//            Position.Lerp(target.Position, t);
+//
+//        result.Orientation =
+//            Orientation.Slerp(target.Orientation, t);
+//
+//        return result;
+//    }
 
     /// Inverts a rigid transform.
     void Invert(RigidTransform transform, RigidTransform &out inverse)
@@ -70,7 +117,7 @@ shared class RigidTransform
     {
         Vec3f intermediate;
         b.Orientation.Transform(a.Position, intermediate);
-        combined.Position += (intermediate+b.Position);
+        combined.Position = intermediate + b.Position;
         a.Orientation.Concatenate(b.Orientation, combined.Orientation);
 
     }
@@ -88,6 +135,22 @@ shared class RigidTransform
         Vec3f intermediate = transform.Orientation.Transform(position);
         result = intermediate+transform.Position;
     }
+
+    RigidTransform Transform(RigidTransform local)
+    {
+        RigidTransform result;
+
+        result.Position =
+            Position + Orientation.Transform(local.Position);
+
+        Orientation.Concatenate(
+            local.Orientation,
+            result.Orientation
+        );
+
+        return result;
+    }
+
     /// Transforms a position by a rigid transform's inverse.
     void TransformByInverse(Vec3f position, RigidTransform transform, Vec3f &out result)
     {
@@ -95,6 +158,24 @@ shared class RigidTransform
         orientation.Conjugate(transform.Orientation);
         Vec3f intermediate = position-transform.Position;
         orientation.Transform(intermediate, result);
+    }
+
+    RigidTransform TransformByInverse(RigidTransform world)
+    {
+        RigidTransform result;
+
+        Quaternion inv;
+        inv.Conjugate(Orientation);
+
+        Vec3f offset = world.Position - Position;
+        result.Position = inv.Transform(offset);
+
+        inv.Concatenate(
+            world.Orientation,
+            result.Orientation
+        );
+
+        return result;
     }
 
     Vec3f Transform(Vec3f position)
@@ -109,4 +190,6 @@ shared class RigidTransform
         orientation.Conjugate(this.Orientation);
         return orientation.Transform(intermediate);
     }
+
+
 }

@@ -2,6 +2,7 @@
 //note: if you are being sucked into your shape, your winding order is the wrong way, reverse your Vertices array.
 
 #include "ShapeArrays.as";
+#include "Vec3f.as";
 
 class SAT_Shape
 {
@@ -127,7 +128,7 @@ class SAT_Shape
 		{
 			return false;
 		}
-		u32 ThisOffset = Map.getTileOffset(Vec2f(Pos.x,Pos.z));
+		u32 ThisOffset = Map.getTileOffset(Pos.xz());
 		u32 mapWidth = Map.tilemapwidth;
 
 		u32[] TileOffsets = // change this to velocity direction?
@@ -163,14 +164,14 @@ class SAT_Shape
 					switch (otherShape.Type)
 					{
 						case 0: if (Poly_Poly(otherShape, Velin, MTV)) ovelapCount++;break;// other is polygon
-						case 1: if (otherShape.PointInsidePolygon(Vec2f(otherShape.Pos.x,otherShape.Pos.z), Vertices, Vec2f(Pos.x,Pos.z))) ovelapCount++; break;// other is circle			
+						case 1: if (otherShape.PointInsidePolygon(otherShape.Pos.xz(), Vertices, Pos.xz())) ovelapCount++; break;// other is circle			
 					} 
 					break;
 
 					case 1: // this is a circle
 					switch (otherShape.Type)
 					{
-						case 0: if (PointInsidePolygon(Vec2f(Pos.x,Pos.z), otherShape.Vertices, Vec2f(otherShape.Pos.x,otherShape.Pos.z))) ovelapCount++; break;// other is polygon
+						case 0: if (PointInsidePolygon(Pos.xz(), otherShape.Vertices, otherShape.Pos.xz())) ovelapCount++; break;// other is polygon
 						case 1: if (Circle_vs_Circle(otherShape, Velin, MTV)) ovelapCount++; break;// other is circle			
 					}
 					break;
@@ -203,7 +204,7 @@ class SAT_Shape
 
 		CBlob@[] sorted;	
 		CBlob@[] blobsInRadius;
-		if (getMap().getBlobsInRadius( Vec2f(Pos.x,Pos.z), 16, @blobsInRadius ))
+		if (getMap().getBlobsInRadius( Pos.xz(), 16, @blobsInRadius ))
 		{
 			sorted.clear();
 			sorted = getSorted(blobsInRadius);
@@ -235,7 +236,7 @@ class SAT_Shape
 							case 1: // this is a circle
 							switch (otherShape.Type)
 							{
-								case 0: {Overlapping = (PointInsidePolygon(Vec2f(Pos.x,Pos.z), otherShape.Vertices, Vec2f(otherShape.Pos.x,otherShape.Pos.z))); break;}// other is polygon
+								case 0: {Overlapping = (PointInsidePolygon(Pos.xz(), otherShape.Vertices, otherShape.Pos.xz())); break;}// other is polygon
 								case 1: {Overlapping = Circle_vs_Circle(otherShape, Velin, MTV); break;}// other is circle			
 							}
 							break;
@@ -249,7 +250,7 @@ class SAT_Shape
 							switch (otherShape.Type)
 							{
 								case 0: if (Poly_Poly(otherShape, Velin, MTV)) {totalMTV+=MTV; ovelapCount++; break;} // other is polygon
-								case 1: if (otherShape.PointInsidePolygon(Vec2f(otherShape.Pos.x,otherShape.Pos.z), this.Vertices, Vec2f(this.Pos.x,this.Pos.z))) {totalMTV+=MTV; ovelapCount++; break;} // other is circle			
+								case 1: if (otherShape.PointInsidePolygon(otherShape.Pos.xz(), this.Vertices, this.Pos.xz())) {totalMTV+=MTV; ovelapCount++; break;} // other is circle			
 							} 
 							break;
 //
@@ -291,7 +292,7 @@ class SAT_Shape
 				{
 					CBlob @b = potentials[i];
 					Vec2f bpos = b.getPosition();
-					f32 dist = (bpos - Vec2f(Pos.x,Pos.z)).getLength();
+					f32 dist = (bpos - Pos.xz()).getLength();
 					if (dist < closestDist)
 					{
 						closestDist = dist;
@@ -343,8 +344,8 @@ class SAT_Shape
 		Vec2f minPentratedAxis;
 		Vec2f Sign = Vec2f(this.Pos.x+Velin.x > poly2.Pos.x ? 1:-1, this.Pos.z+Velin.y > poly2.Pos.z ? 1:-1);
 
-		Vec2f[] Axes = getEdgeNormals( Sign, Vec2f(Pos.x,Pos.z)+Velin ,this.Vertices);
-		Vec2f[] Axes2 = getEdgeNormals(Sign, Vec2f(poly2.Pos.x,poly2.Pos.z), poly2.Vertices);
+		Vec2f[] Axes = getEdgeNormals( Sign, this.Pos.xz()+Velin ,this.Vertices);
+		Vec2f[] Axes2 = getEdgeNormals(Sign, poly2.Pos.xz(), poly2.Vertices);
 		//putting all into one array
 		Axes.set_length(Axes.length+Axes2.length);	
 		for (int i = 0; i < poly2.Vertices.length; i++)
@@ -354,8 +355,8 @@ class SAT_Shape
 		{
 			Vec2f Axis = Axes[i];
 			// Work out min and max 1D points for Vertices
-			Vec2f minmax1 = ProjectOntoAxis( Vec2f(Pos.x,Pos.z)+Velin, this.Vertices, Axis);
-			Vec2f minmax2 = ProjectOntoAxis( Vec2f(poly2.Pos.x,poly2.Pos.z), poly2.Vertices, Axis);
+			Vec2f minmax1 = ProjectOntoAxis( this.Pos.xz()+Velin , this.Vertices, Axis);
+			Vec2f minmax2 = ProjectOntoAxis(poly2.Pos.xz() ,poly2.Vertices, Axis);
 			float p1min = minmax1.x; 
 			float p1max = minmax1.y;
 			float p2min = minmax2.x; 
@@ -378,8 +379,8 @@ class SAT_Shape
 
 	bool Circle_vs_Circle(SAT_Shape@ poly2, Vec2f Velin, Vec2f &out MTV)
 	{
-		Vec2f VelPos = Vec2f(Pos.x,Pos.z)+Velin;
-		float Distance = Maths::Max(0.0001,(VelPos - Vec2f(poly2.Pos.x,poly2.Pos.z)).Length());
+		Vec2f VelPos = Pos.xz()+Velin;
+		float Distance = Maths::Max(0.0001,(VelPos - poly2.Pos.xz()).Length());
 		float Overlap = Distance-(Radius+poly2.Radius);
 		if (Overlap >= 0) return false;
 
@@ -404,10 +405,10 @@ class SAT_Shape
 		
 		for (int i = 0; i < poly2.Vertices.length; i++)
 		{
-			Vec2f p1 = Vec2f(poly2.Pos.x,poly2.Pos.z) + poly2.Vertices[i];
-			Vec2f p2 = Vec2f(poly2.Pos.x,poly2.Pos.z) + poly2.Vertices[(i + 1) % poly2.Vertices.length];			
+			Vec2f p1 = poly2.Pos.xz() + poly2.Vertices[i];
+			Vec2f p2 = poly2.Pos.xz() + poly2.Vertices[(i + 1) % poly2.Vertices.length];			
 
-			float distance = getDistanceToLine(p1, p2, Vec2f(poly2.Pos.x,poly2.Pos.z)+Velin);
+			float distance = getDistanceToLine(p1, p2, Pos.xz()+Velin);
 
 			if (distance < Radius)
 			{
@@ -430,11 +431,11 @@ class SAT_Shape
 	{
 		Vec2f p1, p2;
 		bool inside = false;
-		Vec2f oldPoint = Vec2f(poly.Pos.x,poly.Pos.z) + poly.Vertices[poly.Vertices.length - 1]; 
+		Vec2f oldPoint = poly.Pos.xz() + poly.Vertices[poly.Vertices.length - 1]; 
 
 		for (int i = 0; i < poly.Vertices.length; i++)
 		{
-			Vec2f newPoint = Vec2f(poly.Pos.x,poly.Pos.z) + poly.Vertices[i];
+			Vec2f newPoint = poly.Pos.xz() + poly.Vertices[i];
 
 			if (newPoint.x > oldPoint.x)
 			{ p1 = oldPoint; p2 = newPoint; }
@@ -525,15 +526,15 @@ class SAT_Shape
 			{
 				Vec2f p1 = Vertices[i];
 				Vec2f p2 = Vertices[(i + 1) % Vertices.length];
-				GUI::DrawLine(Vec2f(Pos.x,Pos.z)+p1, Vec2f(Pos.x,Pos.z)+p2, col);
+				GUI::DrawLine(Pos.xz()+p1, Pos.xz()+p2, col);
 			}
 		}
 		else //circle
 		{
-			GUI::DrawCircle(getDriver().getScreenPosFromWorldPos(Vec2f(Pos.x,Pos.z)), (Radius*2)*zoom, col);
+			GUI::DrawCircle(getDriver().getScreenPosFromWorldPos(Pos.xz()), (Radius*2)*zoom, col);
 
 			if (otherShape !is null)
-			GUI::DrawLine(Vec2f(Pos.x,Pos.z), Vec2f(Pos.x,Pos.z)+(Vec2f(0,Radius).RotateBy((Vec2f(Pos.x,Pos.z)-(Vec2f(otherShape.Pos.x,otherShape.Pos.z))).Angle()-90)), col);
+			GUI::DrawLine(Pos.xz(), Pos.xz()+(Vec2f(0,Radius).RotateBy((Pos.xz()-(otherShape.Pos.xz())).Angle()-90)), col);
 		}
 
 	}

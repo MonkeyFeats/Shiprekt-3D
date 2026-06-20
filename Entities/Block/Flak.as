@@ -2,6 +2,9 @@
 #include "IslandsCommon.as"
 #include "AccurateSoundPlay.as"
 #include "SAT_Shapes.as"
+#include "Particle3D.as"
+#include "CollisionDebug.as"
+//#include "BoundingShapes.as";
 
 const f32 PROJECTILE_SPEED = 9.0f;
 const f32 PROJECTILE_SPREAD = 2.25;
@@ -12,6 +15,10 @@ const u8 REFILL_AMMOUNT = 10;//every second
 const f32 AUTO_RADIUS = 400.0f;
 
 Random _shotspreadrandom(0x11598); //clientside
+const string FLAK_RECOIL_TIME = "flak recoil time";
+const f32 FLAK_RECOIL_DISTANCE = 3.5f;
+const f32 FLAK_RECOIL_KICK_TICKS = 2.0f;
+const f32 FLAK_RECOIL_RETURN_TICKS = 7.0f;
 
 void onInit( CBlob@ this )
 {
@@ -34,6 +41,7 @@ void onInit( CBlob@ this )
 	}
 	
 	this.set_u32("fire time", 0);
+	this.set_f32("angle", this.getAngleDegrees());
 	this.set_u16("parentID", 0);
 	this.set_u16("childID", 0);
 	
@@ -54,7 +62,34 @@ void onInit( CBlob@ this )
         anim.AddFrame(2);
         layer.SetAnimation("fire");    	
     }
+
+    //if (getNet().isServer())
+	{
+		//Blob3D blob3d(this, Vec3f(this.getPosition().x, 0, this.getPosition().y), 6, 2.0f);
+		//if ( blob3d !is null )
+		//{	
+		//	@blob3d.shape = BoundingBox( Vec3f(-8.0, -1.0, -8.0), Vec3f(8.0, 0.0, 8.0));
+		//	//blob3d.shape.ownerBlob = blob3d;
+		//	blob3d.shape.SetStatic(false);
+		//	blob3d.shape.setPosition(Vec3f(this.getPosition().x, 0, this.getPosition().y));
+//
+		//	this.set("blob3d", @blob3d);
+		//	//blob3d.shape.ownerBlob = @blob3d;
+		//}
+	}
+
 }
+
+void onRender(CSprite@ this)
+{
+	if (!IsCollisionDebugEnabled())
+		return;
+
+	SAT_Shape@ sat_shape;
+	if (this.getBlob().get("SAT_Info", @sat_shape))
+ 	sat_shape.Render();	
+}
+
 
 void onTick( CBlob@ this )
 {
@@ -157,11 +192,53 @@ void onTick( CBlob@ this )
 			}
 		}
 	}
+
+	Blob3D@ blob3d;
+	if (!this.get("blob3d", @blob3d)) { return; }
+
+	UpdateFlakBlob3D(this, blob3d);
+}
+
+void UpdateFlakBlob3D(CBlob@ this, Blob3D@ blob3d)
+{
+	if (!getNet().isClient() || blob3d is null)
+		return;
+
+	Blob3D@ topper = blob3d.getChild("flaktopper");
+	if (topper is null)
+		return;
+
+	const f32 yaw = this.get_f32("angle") - this.getAngleDegrees();
+	topper.setLocalMayaRotation(Vec3f(0.0f, yaw, 0.0f));
+
+	Blob3D@ barrel = topper.getChild("FlakBarrel");
+	if (barrel is null)
+		return;
+
+	f32 recoil = 0.0f;
+	if (this.exists(FLAK_RECOIL_TIME))
+	{
+		const f32 age = Maths::Max(0.0f, float(getGameTime() - this.get_u32(FLAK_RECOIL_TIME)));
+		if (age <= FLAK_RECOIL_KICK_TICKS)
+		{
+			recoil = FLAK_RECOIL_DISTANCE;
+		}
+		else
+		{
+			const f32 returnAge = age - FLAK_RECOIL_KICK_TICKS;
+			if (returnAge < FLAK_RECOIL_RETURN_TICKS)
+			{
+				recoil = FLAK_RECOIL_DISTANCE * (1.0f - returnAge / FLAK_RECOIL_RETURN_TICKS);
+			}
+		}
+	}
+
+	barrel.LocalTransform.Position = Vec3f(-recoil, 0.0f, 0.0f);
 }
 
 void Manual( CBlob@ this, CBlob@ controller )
 {
-	Vec2f aimpos = controller.getAimPos();
+	Vec2f aimpos = controller.get_Vec2f("aim_pos");
 	Vec2f pos = this.getPosition();
 	Vec2f aimVec = aimpos - pos;	
 	CPlayer@ player = controller.getPlayer();
@@ -227,7 +304,7 @@ void Auto( CBlob@ this )
 						{
 							SAT_Shape@ sat_shape;
 							if (!this.get("SAT_Info", @sat_shape)) { return; }
-							Vec2f(sat_shape.Pos.x,sat_shape.Pos.z) = seat.getPosition();
+							sat_shape.Pos.xz() = seat.getPosition();
 							//bPos = seat.getPosition();
 						}
 					}
@@ -291,7 +368,7 @@ void Auto( CBlob@ this )
 
 void Clone( CBlob@ this, CBlob@ parent, CBlob@ controller )
 {
-	Vec2f aimpos = controller.getAimPos();
+	Vec2f aimpos = controller.get_Vec2f("aim_pos");
 	Vec2f pos = parent.getPosition();
 	Vec2f aimVec = aimpos - pos;	
 	CPlayer@ player = controller.getPlayer();
@@ -421,6 +498,7 @@ void Fire( CBlob@ this, Vec2f aimVector, const u16 netid )
 void Rotate( CBlob@ this, Vec2f aimVector )
 {
 	this.set_f32("angle", -aimVector.getAngleDegrees());
+
 	CSpriteLayer@ layer = this.getSprite().getSpriteLayer("weapon");
 	if(layer !is null)
 	{
@@ -431,16 +509,7 @@ void Rotate( CBlob@ this, Vec2f aimVector )
 
 void GetButtonsFor( CBlob@ this, CBlob@ caller )
 {
-	if ( this.getDistanceTo(caller) > 3 * Block::BUTTON_RADIUS_FLOOR
-		|| this.getShape().getVars().customData <= 0
-		|| this.hasAttached()
-		|| this.getTeamNum() != caller.getTeamNum() )
-		return;
-		
-	CBitStream params;
-	params.write_u16( caller.getNetworkID() );
-	
-	caller.CreateGenericButton( 7, Vec2f(0.0f, 0.0f), this, this.getCommandID("get in seat"), "Control Flak", params );
+	// Flaks are controlled by the 3D center-screen raycast prompt in Human.as.
 }
 
 void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
@@ -485,8 +554,9 @@ void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
             }
     	}
 		
-		shotParticles(pos + aimVector*9, velocity.Angle());
+		shotParticles(this, pos + aimVector*9, velocity.Angle());
 		directionalSoundPlay( "FlakFire.ogg", pos, 0.50f );
+		this.set_u32(FLAK_RECOIL_TIME, getGameTime());
 		
 		CSpriteLayer@ layer = this.getSprite().getSpriteLayer( "weapon" );
 		if ( layer !is null )
@@ -502,40 +572,7 @@ void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
 }
 
 Random _shotrandom(0x15125); //clientside
-void shotParticles(Vec2f pos, float angle)
+void shotParticles(CBlob@ this, Vec2f pos, float angle)
 {
-	//muzzle flash
-	{
-		CParticle@ p = ParticleAnimated( "Entities/Block/turret_muzzle_flash.png",
-												  pos, Vec2f(),
-												  -angle, //angle
-												  1.0f, //scale
-												  3, //animtime
-												  0.0f, //gravity
-												  true ); //selflit
-		if(p !is null)
-			p.Z = 10.0f;
-	}
-
-	Vec2f shot_vel = Vec2f(0.5f,0);
-	shot_vel.RotateBy(-angle);
-
-	//smoke
-	for(int i = 0; i < 5; i++)
-	{
-		//random velocity direction
-		Vec2f vel(0.1f + _shotrandom.NextFloat()*0.2f, 0);
-		vel.RotateBy(_shotrandom.NextFloat() * 360.0f);
-		vel += shot_vel * i;
-
-		CParticle@ p = ParticleAnimated( "Entities/Block/turret_smoke.png",
-												  pos, vel,
-												  _shotrandom.NextFloat() * 360.0f, //angle
-												  1.0f, //scale
-												  3+_shotrandom.NextRanged(4), //animtime
-												  0.0f, //gravity
-												  true ); //selflit
-		if(p !is null)
-			p.Z = 550.0f;
-	}
+	EmitMuzzleParticles3D(this, pos, angle, 1.0f);
 }

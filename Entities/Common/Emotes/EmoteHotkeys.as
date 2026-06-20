@@ -1,81 +1,68 @@
 #include "EmotesCommon.as";
 
-bool init = false;
-u8 emote_1 = 0;
-u8 emote_2 = 0;
-u8 emote_3 = 0;
-u8 emote_4 = 0;
-u8 emote_5 = 0;
-u8 emote_6 = 0;
-u8 emote_7 = 0;
-u8 emote_8 = 0;
-u8 emote_9 = 0;
-bool wasMB3Pressed = false;//CControls.isKeyJustReleased() is borked
+string[] emoteBinds;
 
-const string emote_config_file = "EmoteBindings.cfg";
-
-void onInit( CBlob@ this )
+void onInit(CBlob@ this)
 {
 	this.getCurrentScript().runFlags |= Script::tick_myplayer;
 	this.getCurrentScript().removeIfTag = "dead";
 
-	if(!init)
+	CPlayer@ me = getLocalPlayer();
+	if (me !is null)
 	{
-		init = true; 	//only load the cfg once to avoid 
-						//too much file access!
-
-		ConfigFile cfg = ConfigFile();
-		cfg.loadFile(emote_config_file);
-
-		emote_1 = cfg.read_u8("emote_1", Emotes::attn);
-		emote_2 = cfg.read_u8("emote_2", Emotes::smile);
-		emote_3 = cfg.read_u8("emote_3", Emotes::frown);
-		emote_4 = cfg.read_u8("emote_4", Emotes::mad);
-		emote_5 = cfg.read_u8("emote_5", Emotes::laugh);
-		emote_6 = cfg.read_u8("emote_6", Emotes::wat);
-		emote_7 = cfg.read_u8("emote_7", Emotes::troll);
-		emote_8 = cfg.read_u8("emote_8", Emotes::disappoint);
-		emote_9 = cfg.read_u8("emote_9", Emotes::ladder);
+		emoteBinds = readEmoteBindings(me);
 	}
 }
 
 void onTick(CBlob@ this)
 {
-	CControls@ controls = getControls();
-	
-	if (controls.isKeyJustPressed( KEY_KEY_1 )) {
-		set_emote(this,emote_1);
-	}
-	else if (controls.isKeyJustPressed( KEY_KEY_2 )) {
-		set_emote(this,emote_2);
-	}
-	else if (controls.isKeyJustPressed( KEY_KEY_3 )) {
-		set_emote(this,emote_3);
-	}
-	else if (controls.isKeyJustPressed( KEY_KEY_4 )) {
-		set_emote(this,emote_4);
-	}
-	else if (controls.isKeyJustPressed( KEY_KEY_5 )) {
-		set_emote(this,emote_5);
-	}
-	else if (controls.isKeyJustPressed( KEY_KEY_6 )) {
-		set_emote(this,emote_6);
-	}
-	else if (controls.isKeyJustPressed( KEY_KEY_7 )) {
-		set_emote(this,emote_7);
-	}
-	else if (controls.isKeyJustPressed( KEY_KEY_8 )) {
-		set_emote(this,emote_8);
-	}
-	else if (controls.isKeyJustPressed( KEY_KEY_9 )) {
-		set_emote(this,emote_9);
-	}
-	else if ( controls.isKeyJustPressed( KEY_MBUTTON ) || (controls.isKeyPressed( KEY_MBUTTON ) && getGameTime() % 60 == 0) ) {
-		wasMB3Pressed = true;
-		set_emote(this,Emotes::up);
-	} else if ( wasMB3Pressed && !controls.isKeyPressed( KEY_MBUTTON ) )
+	CRules@ rules = getRules();
+	if (rules.hasTag("reload emotes"))
 	{
-		wasMB3Pressed = false;
-		set_emote(this,Emotes::off);
+		rules.Untag("reload emotes");
+		onInit(this);
+	}
+
+	if (emoteBinds.length < 18)
+	{
+		CPlayer@ me = getLocalPlayer();
+		if (me !is null)
+		{
+			emoteBinds = readEmoteBindings(me);
+		}
+	}
+
+	if (emoteBinds.length < 18 || getHUD().hasMenus())
+	{
+		return;
+	}
+
+	CControls@ controls = getControls();
+	if (controls is null)
+	{
+		return;
+	}
+
+	for (uint i = 0; i < 9; i++)
+	{
+		if (controls.isKeyJustPressed(KEY_NUMPAD1 + i))
+		{
+			set_emote(this, emoteBinds[9 + i]);
+			break;
+		}
+	}
+
+	if (controls.ActionKeyPressed(AK_BUILD_MODIFIER))
+	{
+		return;
+	}
+
+	for (uint i = 0; i < 9; i++)
+	{
+		if (controls.isKeyJustPressed(KEY_KEY_1 + i))
+		{
+			set_emote(this, emoteBinds[i]);
+			break;
+		}
 	}
 }

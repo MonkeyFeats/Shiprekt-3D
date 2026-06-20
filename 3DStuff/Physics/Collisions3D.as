@@ -1,3 +1,4 @@
+#include "Vec3f.as";
 #include "SAT_Shapes.as";
 
 class ICollisionCallback

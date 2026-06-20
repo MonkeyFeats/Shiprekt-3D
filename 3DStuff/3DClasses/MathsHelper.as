@@ -25,7 +25,7 @@ namespace MathsHelper
     const f64 DEGTORAD64 = Pi64 / 180.0;
     const f64 RADTODEG64 = 180.0 / Pi64;
 
-    shared int Sign(f32 value)
+   shared  int Sign(f32 value)
     {
         if (value >= 0) return 1;
         else return -1;     

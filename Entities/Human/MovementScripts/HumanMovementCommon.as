@@ -6,11 +6,11 @@ shared class HumanMoveVars
 	f32 walkSpeed = 0;
 	f32 walkSpeedInAir;
 
-	bool canJump;
 	f32 jumpVel;
-	int jumpState;
 
 	f32 swimspeed;
+	f32 floatForce;
+	f32 swimDownForce;
 
 	//extra force applied while... stopping
 	f32 stoppingForce;

@@ -1,6 +1,7 @@
 //shiprekt HUD
 #include "ActorHUDStartPos.as"
 #include "IslandsCommon.as"
+#include "Raycast3D.as"
 
 const int slotsSize = 6;
 const SColor tipsColor = SColor( 255, 255, 255, 255 );
@@ -101,6 +102,7 @@ void onRender( CSprite@ this )
 	DrawCoreStatus( teamCore, tl, controls );
 	DrawStationStatus( teamCore, tl, controls );
 	DrawResources( blob, pBooty, isCaptain, tl, controls );
+	DrawRaycastInteractPrompt( blob );
 	
 	//			Gameplay Tips
 	//Seat produce couplings help
@@ -169,6 +171,40 @@ void onRender( CSprite@ this )
 		if ( mShipOnScreen && captainName == "" && pBooty < rules.get_u16( "bootyRefillLimit" ) && mShipDMG == 0 )
 			GUI::DrawText( "[ Kill Sharks to gain some Booty ]", Vec2f( 220, 60 + Maths::Sin( gameTime/4.5f ) * 4.5f ), tipsColor );
 	}		
+}
+
+void DrawRaycastInteractPrompt( CBlob@ blob )
+{
+	if (blob is null
+		|| blob.isAttached()
+		|| blob.get_bool("build menu open")
+		|| getHUD().hasMenus())
+	{
+		return;
+	}
+
+	u16 targetID;
+	string promptLabel;
+	if (!Raycast3D::GetInteractTarget(blob, targetID, promptLabel))
+	{
+		return;
+	}
+
+	if (promptLabel == "")
+	{
+		promptLabel = "interact";
+	}
+
+	string useKey = getControls().getActionKeyKeyName(AK_USE);
+	string text = "Press [" + useKey + "] to " + promptLabel;
+	Vec2f size;
+	GUI::GetTextDimensions(text, size);
+
+	Vec2f center(getScreenWidth() * 0.5f, getScreenHeight() * 0.5f + 54.0f);
+	Vec2f ul = center - size * 0.5f - Vec2f(10, 6);
+	Vec2f lr = center + size * 0.5f + Vec2f(10, 6);
+	GUI::DrawButtonPressed(ul, lr);
+	GUI::DrawText(text, center - size * 0.5f, tipsColor);
 }
 
 void DrawShipStatus( CBlob@ this, string name, Vec2f tl, CControls@ controls )

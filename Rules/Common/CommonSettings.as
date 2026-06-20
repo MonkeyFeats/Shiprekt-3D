@@ -1,5 +1,7 @@
 //#include "PrecacheTextures.as"
 #include "BlockCommon.as"
+#include "Camera3D.as"
+#include "CollisionDebug.as"
 
 const int BUTTON_SIZE = 4;
 
@@ -21,6 +23,17 @@ void onInit( CRules@ this )
 	this.set_u16( "booty_transfer", 50 );//min transfer ammount
 	this.set_f32( "booty_transfer_fee", 0.0f );
 	this.set_f32( "build_distance", 16 * 16 );//max distance from the core for purchasing blocks
+
+	ConfigFile cfg;
+	const bool firstPersonCamera = cfg.loadFile("SHRKTVars.cfg") ? cfg.read_bool("first_person_camera", true) : true;
+	this.set_bool(FIRST_PERSON_CAMERA_ENABLED, firstPersonCamera);
+	this.set_bool(COLLISION_DEBUG_ENABLED, false);
+	if (getNet().isServer())
+	{
+		this.Sync(FIRST_PERSON_CAMERA_ENABLED, true);
+		this.Sync(COLLISION_DEBUG_ENABLED, true);
+	}
+
 	Block::Costs@ c = Block::getCosts( this );
 	this.set_u16( "bootyRefillLimit", c !is null ? c.propeller : 50 );
 	

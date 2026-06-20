@@ -166,6 +166,26 @@ namespace Block
 		return (blockType == Block::SOLID || blockType == Block::PROPELLER || blockType == Block::RAMENGINE || blockType == Block::RAM || blockType == Block::POINTDEFENSE);
 	}
 
+	bool isPlatform( const uint blockType )
+	{
+		return (blockType == Block::PLATFORM || blockType == Block::PLATFORM2);
+	}
+
+	bool isSolidCollisionBlock( const uint blockType )
+	{
+		return (Block::isSolid(blockType) || blockType == Block::SHIPCORE || blockType == Block::STATION || blockType == Block::DOOR);
+	}
+
+	bool destroysPlatformOnCollision( const uint blockType )
+	{
+		return (blockType == Block::SOLID || blockType == Block::RAM || blockType == Block::RAMENGINE || blockType == Block::SHIPCORE);
+	}
+
+	bool isRigidHullBlock( const uint blockType )
+	{
+		return (Block::isSolid(blockType) || blockType == Block::SHIPCORE);
+	}
+
 	bool isCore( const uint blockType )
 	{
 		return (blockType == Block::SHIPCORE);

@@ -1,4 +1,5 @@
 ﻿#include "TypeEnums.as";
+#include "Vec3f.as";
 #include "Vec4f.as";
 #include "BoundingBox.as"
 #include "BoundingSphere.as"
@@ -38,7 +39,7 @@ shared class Ray
 
 
         //Second we check each face
-        Vec3f maxT = Vec3f(-1.0f,-1.0f,-1.0f);
+        Vec3f maxT = Vec3f(-1.0f);
         //Vec3f minT = Vec3f(-1.0f);
         //calcul intersection with each faces
         if (Position.x < box.Min.x && Direction.x != 0.0f)
@@ -129,14 +130,14 @@ shared class Ray
 
     void Intersects(Plane plane, double &out result)
     {
-        double den = Direction.opMul(plane.Normal);
+        double den = Dot(Direction, plane.Normal);
         if (Maths::Abs(den) < 0.00001f)
         {
             result = 9999999;
             return;
         }
 
-        result = (-plane.D - plane.Normal.opMul(Position)) / den;
+        result = (-plane.D - Dot(plane.Normal, Position)) / den;
 
         if (result < 0.0f)
         {
@@ -155,7 +156,7 @@ shared class Ray
         // Find the vector between where the ray starts the the sphere's centre
         Vec3f difference = sphere.transform.Position - this.Position;
 
-        double differenceLengthSquared = difference.lengthSquared();
+        double differenceLengthSquared = difference.LengthSquared();
         double sphereRadiusSquared = sphere.Radius * sphere.Radius;
 
         // If the distance between the ray start and the sphere's centre is less than
@@ -165,7 +166,7 @@ shared class Ray
             return false;
         }
 
-        double distanceAlongRay = this.Direction.opMul(difference);
+        double distanceAlongRay = Dot(this.Direction, difference);
         // If the ray is pointing away from the sphere then we don't ever intersect
         if (distanceAlongRay < 0)
         {

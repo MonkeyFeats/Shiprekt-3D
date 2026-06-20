@@ -1,4 +1,5 @@
 #include "TetraBlocks.as"
+#include "PhysicsEngine.as"
 
 Random _rb;
 int randomBlock = 1;
@@ -6,7 +7,13 @@ int randomBlock = 1;
 void onInit( CRules@ this )
 {
 	onRestart( this );
+	
+	PhysicsWorld@ physWorld = PhysicsWorld();
+	if (physWorld is null) print("hello");
+	this.set("physics", @physWorld);
 }
+
+
 
 void onRestart( CRules@ this )
 {
@@ -14,8 +21,18 @@ void onRestart( CRules@ this )
 	if (getMap() !is null){
 		_rb.Reset(XORRandom(9999999));
 	}
-}
 
+
+}
+void onTick(CRules@ this)
+{
+	PhysicsWorld@ physWorld;
+    this.get("physics", @physWorld);
+    if (physWorld !is null)
+    {
+    	physWorld.onTick();
+    }
+}
 void ProduceBlock( CRules@ this, CBlob@ blob, Block::Type[] types)
 {
 	const int blobTeam = blob.getTeamNum();

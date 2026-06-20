@@ -1,11 +1,172 @@
 #include "SAT_Shapes.as";
 
+const f32 ROCK_COLLIDER_DEBUG_INSET = 1.5f;
+
 Vertex[] mountain_Vertices;
 u16[] mountain_IDs;
+Vertex[] rockCollider_Vertices;
+u16[] rockCollider_IDs;
 
 SMesh@ RocksMesh = SMesh();
-SMeshBuffer@ RocksMeshBuffer = SMeshBuffer();
 SMaterial@ RockMat = SMaterial();
+SMesh@ RockColliderMesh = SMesh();
+SMaterial@ RockColliderMat = SMaterial();
+
+u16[] FlipTriangleWinding(const u16[]&in ids)
+{
+	u16[] flipped;
+	flipped.set_length(ids.length());
+
+	for (uint i = 0; i < ids.length(); i += 3)
+	{
+		if (i + 2 >= ids.length())
+		{
+			flipped[i] = ids[i];
+			continue;
+		}
+
+		flipped[i] = ids[i];
+		flipped[i + 1] = ids[i + 2];
+		flipped[i + 2] = ids[i + 1];
+	}
+
+	return flipped;
+}
+
+bool IsRockShapeTile(int tile)
+{
+	return tile == CMap::rock ||
+		(tile >= CMap::rock_shore_convex_RU1 && tile <= CMap::rock_shore_diagonal_L1) ||
+		(tile >= CMap::rock_sand_border_convex_RU1 && tile <= CMap::rock_sand_border_diagonal_L1) ||
+		(tile >= CMap::rock_shoal_border_convex_RU1 && tile <= CMap::rock_shoal_border_diagonal_L1);
+}
+
+void GetRockColliderDebugBounds(CMap@ map, int x, int y, f32 &out minX, f32 &out minZ, f32 &out maxX, f32 &out maxZ)
+{
+	const u32 offset = y * map.tilemapwidth + x;
+	Vec2f center = map.getTileWorldPosition(offset);
+	const f32 half = map.tilesize * 0.5f;
+
+	minX = center.x - half;
+	maxX = center.x + half;
+	minZ = center.y - half;
+	maxZ = center.y + half;
+
+	if (!IsRockShapeTile(GetMapTileOrWater(map, x - 1, y))) minX += ROCK_COLLIDER_DEBUG_INSET;
+	if (!IsRockShapeTile(GetMapTileOrWater(map, x + 1, y))) maxX -= ROCK_COLLIDER_DEBUG_INSET;
+	if (!IsRockShapeTile(GetMapTileOrWater(map, x, y - 1))) minZ += ROCK_COLLIDER_DEBUG_INSET;
+	if (!IsRockShapeTile(GetMapTileOrWater(map, x, y + 1))) maxZ -= ROCK_COLLIDER_DEBUG_INSET;
+}
+
+void AddRockColliderDebugBox(f32 minX, f32 minZ, f32 maxX, f32 maxZ)
+{
+	const f32 minY = -8.0f;
+	const f32 maxY = 80.0f;
+	const SColor col = SColor(180, 0, 255, 255);
+	const u16 base = u16(rockCollider_Vertices.length());
+
+	rockCollider_Vertices.push_back(Vertex(minX, minY, minZ, 0, 0, col));
+	rockCollider_Vertices.push_back(Vertex(maxX, minY, minZ, 1, 0, col));
+	rockCollider_Vertices.push_back(Vertex(maxX, minY, maxZ, 1, 1, col));
+	rockCollider_Vertices.push_back(Vertex(minX, minY, maxZ, 0, 1, col));
+	rockCollider_Vertices.push_back(Vertex(minX, maxY, minZ, 0, 0, col));
+	rockCollider_Vertices.push_back(Vertex(maxX, maxY, minZ, 1, 0, col));
+	rockCollider_Vertices.push_back(Vertex(maxX, maxY, maxZ, 1, 1, col));
+	rockCollider_Vertices.push_back(Vertex(minX, maxY, maxZ, 0, 1, col));
+
+	const u16[] ids = {
+		0, 1, 2, 0, 2, 3,
+		4, 6, 5, 4, 7, 6,
+		0, 4, 5, 0, 5, 1,
+		1, 5, 6, 1, 6, 2,
+		2, 6, 7, 2, 7, 3,
+		3, 7, 4, 3, 4, 0
+	};
+
+	for (uint i = 0; i < ids.length(); i++)
+	{
+		rockCollider_IDs.push_back(base + ids[i]);
+	}
+}
+
+int GetMapTileOrWater(CMap@ map, int x, int y)
+{
+	if (x < 0 || y < 0 || x >= map.tilemapwidth || y >= map.tilemapheight)
+	{
+		return CMap::water;
+	}
+
+	return map.getTile(y * map.tilemapwidth + x).type;
+}
+
+bool IsRockEdge(CMap@ map, int x, int y)
+{
+	return !IsRockShapeTile(GetMapTileOrWater(map, x, y));
+}
+
+int GetPlainRockShapeTile(CMap@ map, u32 offset)
+{
+	const int x = offset % map.tilemapwidth;
+	const int y = offset / map.tilemapwidth;
+
+	const bool R = IsRockEdge(map, x + 1, y);
+	const bool U = IsRockEdge(map, x, y - 1);
+	const bool L = IsRockEdge(map, x - 1, y);
+	const bool D = IsRockEdge(map, x, y + 1);
+	const bool RU = IsRockEdge(map, x + 1, y - 1);
+	const bool LU = IsRockEdge(map, x - 1, y - 1);
+	const bool LD = IsRockEdge(map, x - 1, y + 1);
+	const bool RD = IsRockEdge(map, x + 1, y + 1);
+
+	if (R && U && L && D) return CMap::rock_sand_border_island1;
+	if (RU && LU && LD && RD && !R && !U && !L && !D) return CMap::rock_sand_border_cross1;
+	if (R && U && D) return CMap::rock_sand_border_peninsula_R1;
+	if (R && U && L) return CMap::rock_sand_border_peninsula_U1;
+	if (U && L && D) return CMap::rock_sand_border_peninsula_L1;
+	if (L && D && R) return CMap::rock_sand_border_peninsula_D1;
+	if (RU && LU && D && !R && !U && !L) return CMap::rock_sand_border_T_D1;
+	if (RU && L && RD && !R && !U && !D) return CMap::rock_sand_border_T_L1;
+	if (U && RD && LD && !R && !L && !D) return CMap::rock_sand_border_T_U1;
+	if (R && LU && LD && !U && !L && !D) return CMap::rock_sand_border_T_R1;
+	if (R && LU && !U && !L && !LD && !D) return CMap::rock_sand_border_panhandleL_R1;
+	if (U && LD && !R && !L && !D && !RD) return CMap::rock_sand_border_panhandleL_U1;
+	if (L && RD && !R && !RU && !U && !D) return CMap::rock_sand_border_panhandleL_L1;
+	if (RU && D && !R && !U && !LU && !L) return CMap::rock_sand_border_panhandleL_D1;
+	if (R && LD && !U && !LU && !L && !D) return CMap::rock_sand_border_panhandleR_R1;
+	if (U && RD && !R && !L && !LD && !D) return CMap::rock_sand_border_panhandleR_U1;
+	if (RU && L && !R && !U && !D && !RD) return CMap::rock_sand_border_panhandleR_L1;
+	if (LU && D && !R && !RU && !U && !L) return CMap::rock_sand_border_panhandleR_D1;
+	if (RU && LU && RD && !R && !U && !L && !LD && !D) return CMap::rock_sand_border_split_RU1;
+	if (RU && LU && LD && !R && !U && !L && !D && !RD) return CMap::rock_sand_border_split_LU1;
+	if (LU && LD && RD && !R && !RU && !U && !L && !D) return CMap::rock_sand_border_split_LD1;
+	if (RU && LD && RD && !R && !U && !LU && !L && !D) return CMap::rock_sand_border_split_RD1;
+	if (RU && RD && !R && !U && !LU && !L && !LD && !D) return CMap::rock_sand_border_choke_R1;
+	if (RU && LU && !R && !U && !L && !LD && !D && !RD) return CMap::rock_sand_border_choke_U1;
+	if (LU && LD && !R && !RU && !U && !L && !D && !RD) return CMap::rock_sand_border_choke_L1;
+	if (LD && RD && !R && !RU && !U && !LU && !L && !D) return CMap::rock_sand_border_choke_D1;
+	if (U && D) return CMap::rock_sand_border_strip_H1;
+	if (R && L) return CMap::rock_sand_border_strip_V1;
+	if (L && LU && U && RD) return CMap::rock_sand_border_bend_LU1;
+	if (R && RU && U && LD) return CMap::rock_sand_border_bend_RU1;
+	if (R && RD && D && LU) return CMap::rock_sand_border_bend_RD1;
+	if (L && LD && D && RU) return CMap::rock_sand_border_bend_LD1;
+	if (RU && LD && !R && !U && !LU && !L && !D && !RD) return CMap::rock_sand_border_diagonal_R1;
+	if (LU && RD && !R && !RU && !U && !L && !LD && !D) return CMap::rock_sand_border_diagonal_L1;
+	if (R && !U && !LU && !L && !LD && !D) return CMap::rock_sand_border_straight_R1;
+	if (U && !R && !L && !LD && !D && !RD) return CMap::rock_sand_border_straight_U1;
+	if (L && !R && !RU && !U && !D && !RD) return CMap::rock_sand_border_straight_L1;
+	if (D && !R && !RU && !U && !LU && !L) return CMap::rock_sand_border_straight_D1;
+	if (R && U) return CMap::rock_sand_border_convex_RU1;
+	if (L && U) return CMap::rock_sand_border_convex_LU1;
+	if (L && D) return CMap::rock_sand_border_convex_LD1;
+	if (R && D) return CMap::rock_sand_border_convex_RD1;
+	if (RU) return CMap::rock_sand_border_concave_RU1;
+	if (LU) return CMap::rock_sand_border_concave_LU1;
+	if (LD) return CMap::rock_sand_border_concave_LD1;
+	if (RD) return CMap::rock_sand_border_concave_RD1;
+
+	return CMap::rock;
+}
 
 void LoadMapShapes(CMap@ map)
 {
@@ -13,22 +174,66 @@ void LoadMapShapes(CMap@ map)
 	map.set("Map_SAT_Info", @shapes);	
 
 	Map_SAT_Shapes map_shapes();
+	mountain_Vertices.clear();
+	mountain_IDs.clear();
+	rockCollider_Vertices.clear();
+	rockCollider_IDs.clear();
 
 	const uint tileCount = map.tilemapwidth * map.tilemapheight;
 
-    //RocksMeshBuffer.SetHardwareMapping(Driver::DYNAMIC);  
+    RocksMesh.SetHardwareMapping(SMesh::DYNAMIC);  
 
 	u16 lastID = 0;
 
 	for (u32 offset = 0; offset < tileCount; ++offset)
 	{
 		TileType tile = map.getTile(offset).type;
+		int shapeTile = tile;
+		if (tile == CMap::rock)
+		{
+			shapeTile = GetPlainRockShapeTile(map, offset);
+		}
+		else if (tile >= CMap::rock_shore_convex_RU1 && tile <= CMap::rock_shore_diagonal_L1)
+		{
+			shapeTile = CMap::rock_sand_border_convex_RU1 + (tile - CMap::rock_shore_convex_RU1);
+		}
+		else if (tile >= CMap::rock_shoal_border_convex_RU1 && tile <= CMap::rock_shoal_border_diagonal_L1)
+		{
+			shapeTile = CMap::rock_sand_border_convex_RU1 + (tile - CMap::rock_shoal_border_convex_RU1);
+		}
+
 		Vec2f pos_off = map.getTileWorldPosition(offset);
 		Vec2f tile_center = pos_off;
 		pos_off /= 16;
 
-		switch (tile)
+		if (IsRockShapeTile(tile))
 		{
+			const int tileX = int(offset % map.tilemapwidth);
+			const int tileY = int(offset / map.tilemapwidth);
+			f32 colliderMinX;
+			f32 colliderMinZ;
+			f32 colliderMaxX;
+			f32 colliderMaxZ;
+			GetRockColliderDebugBounds(map, tileX, tileY, colliderMinX, colliderMinZ, colliderMaxX, colliderMaxZ);
+			AddRockColliderDebugBox(colliderMinX, colliderMinZ, colliderMaxX, colliderMaxZ);
+		}
+
+		switch (shapeTile)
+		{
+			case CMap::rock:
+			{
+				for (uint i = 0; i < Rock_island_Vertices.length; i++) {
+					Vertex v = Rock_island_Vertices[i];
+					v.x += pos_off.y; v.z += pos_off.x;
+					mountain_Vertices.push_back( v ); }
+
+				for (uint i = 0; i < Rock_island_IDs.length; i++) {
+					mountain_IDs.push_back( lastID+Rock_island_IDs[i] ); }
+
+				lastID += Rock_island_Vertices.length;
+				map_shapes.PushAShape(full_rock_Shape, tile_center, offset, 0);
+			}break;
+
 			case CMap::rock_sand_border_island1: 
 			{
 				for (uint i = 0; i < Rock_island_Vertices.length; i++) {
@@ -648,7 +853,7 @@ void LoadMapShapes(CMap@ map)
 			//convex shorelines
 			case CMap::rock_sand_border_convex_LU1:
 			{
-				//RocksMeshBuffer.LoadObjIntoMesh("RockCorner1.obj");
+				//RocksMesh.LoadObjIntoMesh("RockCorner1.obj");
 
 				for (uint i = 0; i < Rock_Corner_Vertices.length; i++) {
 					Vertex v = Rock_Corner_Vertices[i];
@@ -787,23 +992,50 @@ void LoadMapShapes(CMap@ map)
  
  	if (mountain_Vertices.length() > 0)
  	{	 		
-		RocksMeshBuffer.SetVertices(mountain_Vertices);
-	    RocksMeshBuffer.SetIndices(mountain_IDs); 
- 
-	   	//RocksMesh.BuildMesh();
-	    RocksMeshBuffer.SetDirty(Driver::VERTEX_INDEX);
+		for (uint i = 0; i < mountain_Vertices.length(); i++)
+		{
+			Vertex v = mountain_Vertices[i];
+			f32 mapX = v.z;
+			v.z = v.x * 16.0f;
+			v.x = mapX * 16.0f;
+			v.y *= 16.0f;
+			mountain_Vertices[i] = v;
+		}
 
-	    RockMat.SetTexture("StoneTexture.png", 0);
+		RocksMesh.SetVertex(mountain_Vertices);
+	    RocksMesh.SetIndices(FlipTriangleWinding(mountain_IDs)); 
+ 
+	   	RocksMesh.BuildMesh();
+	    RocksMesh.SetDirty(SMesh::VERTEX_INDEX);
+
+	    RockMat.AddTexture("StoneTexture.png", 0);
 
 	    RockMat.DisableAllFlags();
 	    RockMat.SetFlag(SMaterial::COLOR_MASK, true);
 	    RockMat.SetFlag(SMaterial::ZBUFFER, true);
 	    RockMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
 	    RockMat.SetFlag(SMaterial::BACK_FACE_CULLING, true);
-	    //RockMat.SetMaterialType(SMaterial::SOLID);
+	    RockMat.SetMaterialType(SMaterial::SOLID);
 	    //RockMat.SetFlag(SMaterial::LIGHTING, true);
 	    //RockMat.SetEmissiveColor(SColor(255,255,0,180));
-	    RocksMeshBuffer.SetMaterial(RockMat);
+	    RocksMesh.SetMaterial(RockMat);
+	}
+
+	if (rockCollider_Vertices.length() > 0)
+	{
+		RockColliderMesh.SetVertex(rockCollider_Vertices);
+		RockColliderMesh.SetIndices(rockCollider_IDs);
+		RockColliderMesh.BuildMesh();
+		RockColliderMesh.SetDirty(SMesh::VERTEX_INDEX);
+
+		RockColliderMat.DisableAllFlags();
+		RockColliderMat.SetFlag(SMaterial::COLOR_MASK, true);
+		RockColliderMat.SetFlag(SMaterial::ZBUFFER, true);
+		RockColliderMat.SetFlag(SMaterial::ZWRITE_ENABLE, false);
+		RockColliderMat.SetFlag(SMaterial::BACK_FACE_CULLING, false);
+		RockColliderMat.SetFlag(SMaterial::WIREFRAME, true);
+		RockColliderMat.SetMaterialType(SMaterial::TRANSPARENT_VERTEX_ALPHA);
+		RockColliderMesh.SetMaterial(RockColliderMat);
 	}
 }
 
@@ -814,6 +1046,12 @@ const Vec2f[] peninsula_Shape =
 	Vec2f( 2.0f, -4.0f),
 	Vec2f( 4.0f, -2.0f),
 	Vec2f( 4.0f,  8.0f)};
+
+const Vec2f[] full_rock_Shape =
+{	Vec2f(-8.0f,-8.0f),
+	Vec2f( 8.0f,-8.0f),
+	Vec2f( 8.0f, 8.0f),
+	Vec2f(-8.0f, 8.0f)};
 
 const Vec2f[] concave_Shape = 
 {  Vec2f(-8.0f,-8.0f),
@@ -916,4 +1154,3 @@ const Vec2f[] tee_Shape =
 	Vec2f( 4.0f, 8.0f),
 	Vec2f(-4.0f, 8.0f),
 	Vec2f(-8.0f, 4.0f)};
-

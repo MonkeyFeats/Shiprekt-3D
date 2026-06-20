@@ -22,14 +22,26 @@ CBlob@ spawnBlob( CMap@ map, const string& in name, int offset, int team, bool a
 void AddMarker( CMap@ map, int offset, const string& in name)
 {
 	map.AddMarker( map.getTileWorldPosition( offset ), name );
-	PlaceMostLikelyTile( map, offset );
 }
 
 void PlaceMostLikelyTile( CMap@ map, int offset )
 {
-	TileType down = map.getTile( offset + map.tilemapwidth).type;
+	const int width = map.tilemapwidth;
+	TileType tile = CMap::water;
 
-	map.SetTile( offset, down );
+	if (width > 0)
+	{
+		if (offset > 0 && offset % width != 0)
+		{
+			tile = map.getTile(offset - 1).type;
+		}
+		else if (offset >= width)
+		{
+			tile = map.getTile(offset - width).type;
+		}
+	}
+
+	map.SetTile( offset, tile );
 	map.AddTileFlag( offset, Tile::BACKGROUND );
 }
 /*

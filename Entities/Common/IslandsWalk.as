@@ -19,7 +19,7 @@ void onTick( CBlob@ this )
 {
 	SAT_Shape@ sat_shape;
 	if (!this.get("SAT_Info", @sat_shape)) return;
-	if ( !this.isOnGround() ) return;
+	if ( !this.get_bool("onGround") ) return;
 		
 	Island@ island = getIsland( this );
 	if ( island !is null && island.centerBlock !is null )
@@ -32,7 +32,7 @@ void onTick( CBlob@ this )
 			currentCenterBlockID = id;
 		}
 		
-    	Vec2f pos = Vec2f(sat_shape.Pos.x,sat_shape.Pos.z);
+    	Vec2f pos = sat_shape.Pos.xz();
 		f32 islandAngle = island.centerBlock.getAngleDegrees();
 		Vec2f islandPos = island.centerBlock.getInterpolatedPosition();
 		Vec2f islandDisplacement = islandPos - islandOldPos;
@@ -43,7 +43,6 @@ void onTick( CBlob@ this )
 		islandOldPos = islandPos;
 		islandOldAngle = islandAngle;
 
-		Vec2f vec = ( islandPos + islandToBlob);
-		sat_shape.Pos = Vec3f(vec.x, sat_shape.Pos.y, vec.y);
+		sat_shape.Pos = V2toV3( islandPos + islandToBlob, sat_shape.Pos.y);
 	}
 }

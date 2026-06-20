@@ -3,11 +3,40 @@
 #include "AccurateSoundPlay.as"
 #include "TileCommon.as"
 #include "SAT_Shapes.as"
+#include "OceanWave.as"
 
-const f32 VEL_DAMPING = 0.96f;
-const f32 ANGLE_VEL_DAMPING = 0.96;
+const f32 VEL_DAMPING = 0.985f;
+const f32 ANGLE_VEL_DAMPING = 0.982f;
 const uint FORCE_UPDATE_TICKS = 21;
 f32 UPDATE_DELTA_SMOOTHNESS = 32.0f;//~16-64
+
+const f32 SHIP_WAVE_MIN_SAMPLE_DISTANCE = 96.0f;
+const f32 SHIP_WAVE_MAX_SAMPLE_DISTANCE = 192.0f;
+const f32 SHIP_MAX_SPEED = 8.0f;
+const f32 SHIP_MAX_ANGLE_SPEED = 6.0f;
+const f32 SHIP_COLLISION_RESTITUTION = 0.78f;
+const f32 SHIP_COLLISION_POSITION_PERCENT = 0.94f;
+const f32 SHIP_COLLISION_MIN_PUSH = 0.22f;
+const f32 SHIP_COLLISION_MAX_PUSH = 1.60f;
+const f32 SHIP_COLLISION_PUSH_BIAS = 0.12f;
+const f32 SHIP_COLLISION_MIN_DYNAMIC_SHARE = 0.28f;
+const f32 SHIP_COLLISION_SEPARATION_BOOST = 0.35f;
+const f32 SHIP_COLLISION_ANGULAR_TRANSFER = 0.85f;
+const f32 SHIP_COLLISION_MAX_ANGULAR_KICK = 2.20f;
+const f32 SHIP_COLLISION_BROADPHASE_PADDING = 20.0f;
+const f32 SHIP_COLLISION_BLOCK_RADIUS = 32.0f;
+
+class IslandCollisionContact
+{
+	CBlob@ blockA;
+	CBlob@ blockB;
+	Vec2f mtv;
+	Vec2f point;
+	bool solidA;
+	bool solidB;
+	bool platformA;
+	bool platformB;
+}
 
 uint color;
 bool updatedThisTick = false;
@@ -190,6 +219,7 @@ void InitIsland( Island @isle )//called for all islands after a block is placed 
 	//print( isle.id + " mass: " + totalMass + "; effective: " + isle.mass );
 	
 	//update block positions/angle array
+	isle.collisionRadius = 0.0f;
 	for (uint b_iter = 0; b_iter < isle.blocks.length; ++b_iter)
 	{
 		IslandBlock@ isle_block = isle.blocks[b_iter];
@@ -199,10 +229,12 @@ void InitIsland( Island @isle )//called for all islands after a block is placed 
 			isle_block.offset = b.getInterpolatedPosition() - center;
 			isle_block.offset.RotateBy( -isle.angle );
 			isle_block.angle_offset = b.getAngleDegrees() - isle.angle;
-			isle_block.setModel(b);
+			//isle_block.setModel(b);
+			isle.collisionRadius = Maths::Max( isle.collisionRadius, isle_block.offset.Length() + Block::size );
 		}
 	}
 
+	RebuildIslandPhysicsProperties( isle );
 	isle.CombineModels();	
 }
 
@@ -236,8 +268,7 @@ void UpdateIslands( CRules@ this, const bool integrate = true, const bool forceO
 			isle.old_angle = isle.angle;
 			isle.pos += isle.vel;		
 			isle.angle += isle.angle_vel;
-			isle.vel *= VEL_DAMPING;
-			isle.angle_vel *= ANGLE_VEL_DAMPING;
+			ApplyWaterDrag( isle );
 			
 			//check for beached or slowed islands
 			isle.beached = false;
@@ -248,7 +279,7 @@ void UpdateIslands( CRules@ this, const bool integrate = true, const bool forceO
 				CBlob@ b = getBlobByNetworkID( isle_block.blobID );
 				if ( b !is null )
 				{
-					Vec2f bPos = b.getInterpolatedPosition();
+					Vec2f bPos = GetIslandBlockWorldPosition( isle, isle_block );
 	
 					Tile bTile = map.getTile( bPos );
 					bool onLand = map.isTileBackgroundNonEmpty( bTile );
@@ -289,6 +320,8 @@ void UpdateIslands( CRules@ this, const bool integrate = true, const bool forceO
 			isle.vel = Vec2f(0, 0);
 			isle.angle_vel = 0.0f;			
 		}
+
+		UpdateIslandWaveVisual( isle );
 
 		if ( !isServer || ( !forceOwnerSearch && ( getGameTime() + isle.id * 33 ) % 45 > 0 ) )//updateIslandBlobs if !isServer OR isServer and not on a 'second tick'
 		{
@@ -384,7 +417,7 @@ void UpdateIslands( CRules@ this, const bool integrate = true, const bool forceO
 		}
 		//if( isle.owner != "") 	print( "updated isle " + isle.id + "; owner: " + isle.owner + "; mass: " + isle.mass );
 	}
-	
+
 	//calculate carryMass weight
 	CBlob@[] humans;
 	getBlobsByName( "human", @humans );
@@ -402,40 +435,685 @@ void UpdateIslands( CRules@ this, const bool integrate = true, const bool forceO
 			}
 		}
 	}
+
+	if ( integrate )
+	{
+		ResolveIslandCollisions( this, islands );
+	}
 }
 
 float iLastXPos = 0.01f;
 float iLastYPos = 0.01f;
 
+Vec2f GetIslandBlockWorldOffset( Island@ isle, IslandBlock@ isle_block )
+{
+	if ( isle is null || isle_block is null )
+		return Vec2f_zero;
+
+	Vec2f offset = isle_block.offset;
+	offset.RotateBy( isle.angle );
+	return offset;
+}
+
+Vec2f GetIslandBlockWorldPosition( Island@ isle, IslandBlock@ isle_block )
+{
+	if ( isle is null )
+		return Vec2f_zero;
+
+	return isle.pos + GetIslandBlockWorldOffset( isle, isle_block );
+}
+
 void UpdateIslandBlob( CBlob@ blob, Island @isle, IslandBlock@ isle_block )
 {
-	Vec2f offset = isle_block.offset;
-	offset.RotateBy( isle.angle );			
+	Vec2f offset = GetIslandBlockWorldOffset( isle, isle_block );
+	const f32 worldAngle = isle.angle + isle_block.angle_offset;
+	const Vec2f blockPos = GetIslandBlockWorldPosition( isle, isle_block );
 
 	Blob3D@ blob3d;
 	if (blob.get("blob3d", @blob3d))
 	{		
-		blob.setPosition(isle.pos + offset);
-		Vec2f p = ( isle.pos + offset );
-		Vec3f p3d = Vec3f(p.x,0,p.y);
-		blob3d.setPosition( p3d );
-		//blob3d.setAngleDegrees(  isle.angle + isle_block.angle_offset  );
+		blob3d.setPosition( V2toV3( blockPos ) );
+		blob3d.transform.Orientation.x = worldAngle;
+		blob3d.transform.Orientation.y = 0.0f;
+		blob3d.transform.Orientation.z = 0.0f;
+		ApplyIslandWaveVisualToBlob( isle, offset, worldAngle, blob3d );
+		blob.setPosition( blob3d.getPosition().xz() );
 
 		//blob3d.shape.model.SetTranslation(V2toV3( isle.pos + offset ));
         //blob3d.shape.model.setRotationDegrees(-(isle.angle + isle_block.angle_offset),0,0);
 
-		blob3d.shape.setPosition( p3d );
-
-		blob3d.shape.setAngleDegreesX(isle.angle + isle_block.angle_offset);
-		//blob3d.shape.setAngleDegreesXZ( -(isle.angle + isle_block.angle_offset)  );
+		if (blob3d.shape !is null)
+		{
+			blob3d.shape.setPosition( blob3d.getPosition() );
+			blob3d.shape.transform.Orientation.x = worldAngle;
+			blob3d.shape.transform.Orientation.y = 0.0f;
+			blob3d.shape.transform.Orientation.z = 0.0f;
+			//blob3d.shape.setAngleDegreesXZ( -worldAngle );
+		}
 
 		//blob3d.shape.UpdateAttributes(SColor(255,255,0,255));
 	}
 
- 	blob.setAngleDegrees( isle.angle + isle_block.angle_offset );
+ 	blob.setAngleDegrees( worldAngle );
 
 	blob.setVelocity( Vec2f_zero );
 	blob.setAngularVelocity( 0.0f );
+}
+
+f32 GetShipWaveBobAt(Vec2f pos)
+{
+    Vec3f samplePos = GetShipWaveSamplePosition(pos);
+    const f32 waterDisplacement = GetOceanWaterHeight(samplePos) - GetOceanRestWaterHeight();
+    return Maths::Clamp(waterDisplacement * SHIP_WAVE_BOB_SCALE, -SHIP_WAVE_MAX_BOB, SHIP_WAVE_MAX_BOB);
+}
+
+f32 SmoothShipWaveValue(const f32 current, const f32 target)
+{
+	return current + (target - current) * SHIP_WAVE_VISUAL_SMOOTH_FACTOR;
+}
+
+void UpdateIslandWaveVisual( Island@ isle )
+{
+	if ( isle is null )
+		return;
+
+	CRules@ rules = getRules();
+	if ( !getNet().isClient() || (rules !is null && rules.get_bool(SHIP_WAVE_VISUALS_DISABLED)) )
+	{
+		isle.waveYOffset = 0.0f;
+		isle.waveSlopeX = 0.0f;
+		isle.waveSlopeZ = 0.0f;
+		isle.waveVisualInitialized = false;
+		return;
+	}
+
+	const f32 sampleDistance = Maths::Clamp(isle.collisionRadius * 0.45f, SHIP_WAVE_MIN_SAMPLE_DISTANCE, SHIP_WAVE_MAX_SAMPLE_DISTANCE);
+	const f32 invSampleSpan = 1.0f / (sampleDistance * 2.0f);
+	const Vec2f sampleX(sampleDistance, 0.0f);
+	const Vec2f sampleZ(0.0f, sampleDistance);
+	const f32 targetYOffset = GetShipWaveBobAt(isle.pos);
+	const f32 targetSlopeX = (GetShipWaveBobAt(isle.pos + sampleX) - GetShipWaveBobAt(isle.pos - sampleX)) * invSampleSpan;
+	const f32 targetSlopeZ = (GetShipWaveBobAt(isle.pos + sampleZ) - GetShipWaveBobAt(isle.pos - sampleZ)) * invSampleSpan;
+
+	if (!isle.waveVisualInitialized)
+	{
+		isle.waveYOffset = targetYOffset;
+		isle.waveSlopeX = targetSlopeX;
+		isle.waveSlopeZ = targetSlopeZ;
+		isle.waveVisualInitialized = true;
+		return;
+	}
+
+	isle.waveYOffset = SmoothShipWaveValue(isle.waveYOffset, targetYOffset);
+	isle.waveSlopeX = SmoothShipWaveValue(isle.waveSlopeX, targetSlopeX);
+	isle.waveSlopeZ = SmoothShipWaveValue(isle.waveSlopeZ, targetSlopeZ);
+}
+
+void ApplyIslandWaveVisualToBlob( Island@ isle, Vec2f worldOffset, const f32 worldAngle, Blob3D@ blob3d )
+{
+	if ( isle is null || blob3d is null )
+		return;
+
+	CRules@ rules = getRules();
+	if ( !getNet().isClient() || (rules !is null && rules.get_bool(SHIP_WAVE_VISUALS_DISABLED)) )
+	{
+		blob3d.renderOffset = Vec3f();
+		blob3d.renderRotation = Vec3f();
+		return;
+	}
+
+	blob3d.renderOffset = Vec3f(0.0f, GetIslandWaveVisualY(isle, worldOffset), 0.0f);
+	blob3d.renderRotation = GetIslandWaveVisualRotation(isle);
+}
+
+void ApplyWaterDrag( Island@ isle )
+{
+	if ( isle is null )
+		return;
+
+	isle.vel *= VEL_DAMPING;
+	isle.angle_vel *= ANGLE_VEL_DAMPING;
+
+	if ( isle.vel.LengthSquared() < 0.000025f )
+		isle.vel = Vec2f_zero;
+
+	if ( Maths::Abs( isle.angle_vel ) < 0.0005f )
+		isle.angle_vel = 0.0f;
+
+	LimitIslandMotion( isle );
+}
+
+void ResolveIslandCollisions( CRules@ rules, Island[]@ islands )
+{
+	if ( islands is null )
+		return;
+
+	for (uint i = 0; i < islands.length; ++i)
+	{
+		Island@ island = islands[i];
+		if ( !CanIslandCollide( island ) )
+			continue;
+
+		const f32 islandRadius = GetIslandCollisionRadius( island );
+
+		for (uint j = i + 1; j < islands.length; ++j)
+		{
+			Island@ other = islands[j];
+			if ( !CanIslandCollide( other ) || ( island.isStation && other.isStation ) )
+				continue;
+
+			const f32 otherRadius = GetIslandCollisionRadius( other );
+			const f32 broadphaseRadius = islandRadius + otherRadius + SHIP_COLLISION_BROADPHASE_PADDING;
+
+			if ( ( island.pos - other.pos ).LengthSquared() > broadphaseRadius * broadphaseRadius )
+				continue;
+
+			IslandCollisionContact contact;
+			bool foundContact = false;
+			if ( island.blocks.length <= other.blocks.length )
+			{
+				foundContact = FindIslandCollisionContact( island, other, @contact );
+			}
+			else
+			{
+				foundContact = FindIslandCollisionContact( other, island, @contact );
+				if ( foundContact )
+					FlipIslandCollisionContact( @contact );
+			}
+
+			if ( !foundContact )
+				continue;
+
+			if ( HandlePlatformCollision( rules, @contact ) )
+				return;
+
+			if ( contact.solidA && contact.solidB )
+			{
+				ApplySolidIslandCollision( island, other, @contact );
+				RefreshIslandBlobs( island );
+				RefreshIslandBlobs( other );
+			}
+		}
+	}
+}
+
+bool CanIslandCollide( Island@ isle )
+{
+	return isle !is null && isle.centerBlock !is null && isle.blocks.length > 0;
+}
+
+f32 GetIslandCollisionRadius( Island@ isle )
+{
+	if ( isle is null )
+		return 0.0f;
+
+	if ( isle.collisionRadius > 0.0f )
+		return isle.collisionRadius;
+
+	for (uint b_iter = 0; b_iter < isle.blocks.length; ++b_iter)
+	{
+		IslandBlock@ isle_block = isle.blocks[b_iter];
+		if ( isle_block !is null )
+			isle.collisionRadius = Maths::Max( isle.collisionRadius, isle_block.offset.Length() + Block::size );
+	}
+
+	return isle.collisionRadius;
+}
+
+void RebuildIslandPhysicsProperties( Island@ isle )
+{
+	if ( isle is null )
+		return;
+
+	f32 totalMass = 0.0f;
+	Vec2f weightedCenter = Vec2f_zero;
+	isle.collisionRadius = 0.0f;
+
+	for (uint b_iter = 0; b_iter < isle.blocks.length; ++b_iter)
+	{
+		IslandBlock@ isle_block = isle.blocks[b_iter];
+		if ( isle_block is null )
+			continue;
+
+		CBlob@ block = getBlobByNetworkID( isle_block.blobID );
+		const f32 blockMass = block !is null ? Maths::Max( 0.1f, block.get_f32( "weight" ) ) : 1.0f;
+		totalMass += blockMass;
+		weightedCenter += isle_block.offset * blockMass;
+		isle.collisionRadius = Maths::Max( isle.collisionRadius, isle_block.offset.Length() + Block::size );
+	}
+
+	if ( totalMass <= 0.0f )
+	{
+		isle.centerOfMassOffset = Vec2f_zero;
+		isle.momentOfInertia = 1.0f;
+		return;
+	}
+
+	isle.centerOfMassOffset = weightedCenter / totalMass;
+
+	f32 inertia = 0.0f;
+	for (uint b_iter = 0; b_iter < isle.blocks.length; ++b_iter)
+	{
+		IslandBlock@ isle_block = isle.blocks[b_iter];
+		if ( isle_block is null )
+			continue;
+
+		CBlob@ block = getBlobByNetworkID( isle_block.blobID );
+		const f32 blockMass = block !is null ? Maths::Max( 0.1f, block.get_f32( "weight" ) ) : 1.0f;
+		Vec2f arm = isle_block.offset - isle.centerOfMassOffset;
+		inertia += Maths::Sqrt( blockMass ) * ( arm.LengthSquared() + 42.0f );
+	}
+
+	isle.momentOfInertia = Maths::Max( 24.0f, inertia );
+}
+
+bool FindIslandCollisionContact( Island@ island, Island@ other, IslandCollisionContact@ contact )
+{
+	if ( contact is null )
+		return false;
+
+	const int otherColor = GetIslandColor( other );
+	if ( otherColor <= 0 )
+		return false;
+
+	bool found = false;
+	f32 accumulatedWeight = 0.0f;
+	f32 accumulatedPenetration = 0.0f;
+	uint contactCount = 0;
+	Vec2f accumulatedMTV = Vec2f_zero;
+	Vec2f accumulatedPoint = Vec2f_zero;
+	const f32 otherRadius = GetIslandCollisionRadius( other ) + SHIP_COLLISION_BLOCK_RADIUS;
+	const f32 otherRadiusSquared = otherRadius * otherRadius;
+
+	for (uint a_iter = 0; a_iter < island.blocks.length; ++a_iter)
+	{
+		IslandBlock@ islandBlockA = island.blocks[a_iter];
+		CBlob@ blockA = getBlobByNetworkID( islandBlockA.blobID );
+		bool solidA = false;
+		bool platformA = false;
+		if ( !IsCollisionCandidateBlock( blockA, solidA, platformA ) )
+			continue;
+
+		Vec2f blockAPos = GetIslandBlockWorldPosition( island, islandBlockA );
+		if ( ( blockAPos - other.pos ).LengthSquared() > otherRadiusSquared )
+			continue;
+
+		for (uint b_iter = 0; b_iter < other.blocks.length; ++b_iter)
+		{
+			IslandBlock@ islandBlockB = other.blocks[b_iter];
+			CBlob@ blockB = getBlobByNetworkID( islandBlockB.blobID );
+			if ( blockB is blockA || blockB is null || blockB.getName() != "block" )
+				continue;
+
+			if ( blockB.getShape().getVars().customData != otherColor )
+				continue;
+
+			bool solidB = false;
+			bool platformB = false;
+			if ( !IsCollisionCandidateBlock( blockB, solidB, platformB ) )
+				continue;
+
+			const bool platformBreak = ( Block::destroysPlatformOnCollision( blockA.getSprite().getFrame() ) && platformB )
+				|| ( Block::destroysPlatformOnCollision( blockB.getSprite().getFrame() ) && platformA );
+			const bool solidBounce = solidA && solidB;
+			if ( !platformBreak && !solidBounce )
+				continue;
+
+			Vec2f blockBPos = GetIslandBlockWorldPosition( other, islandBlockB );
+			if ( ( blockAPos - blockBPos ).LengthSquared() > SHIP_COLLISION_BLOCK_RADIUS * SHIP_COLLISION_BLOCK_RADIUS )
+				continue;
+
+			Vec2f mtv;
+			if ( !GetBlockCollisionMTV( blockA, blockB, blockAPos, blockBPos, mtv ) )
+				continue;
+
+			if ( platformBreak )
+			{
+				@contact.blockA = blockA;
+				@contact.blockB = blockB;
+				contact.mtv = mtv;
+				contact.point = ( blockAPos + blockBPos ) * 0.5f;
+				contact.solidA = solidA;
+				contact.solidB = solidB;
+				contact.platformA = platformA;
+				contact.platformB = platformB;
+				return true;
+			}
+
+			f32 penetration = mtv.Normalize();
+			if ( penetration > 0.0001f )
+			{
+				found = true;
+				@contact.blockA = blockA;
+				@contact.blockB = blockB;
+				contact.solidA = solidA;
+				contact.solidB = solidB;
+				contact.platformA = platformA;
+				contact.platformB = platformB;
+
+				Vec2f point = ( blockAPos + blockBPos ) * 0.5f;
+				accumulatedMTV += mtv * penetration;
+				accumulatedPoint += point * penetration;
+				accumulatedPenetration += penetration;
+				accumulatedWeight += penetration;
+				contactCount++;
+			}
+		}
+	}
+
+	if ( found && accumulatedWeight > 0.0f && contactCount > 0 )
+	{
+		Vec2f normal = accumulatedMTV;
+		if ( normal.Normalize() > 0.0001f )
+		{
+			const f32 averagePenetration = accumulatedPenetration / contactCount;
+			contact.mtv = normal * Maths::Min( Block::size * 0.85f, averagePenetration * 1.35f );
+			contact.point = accumulatedPoint / accumulatedWeight;
+		}
+	}
+
+	return found;
+}
+
+void FlipIslandCollisionContact( IslandCollisionContact@ contact )
+{
+	if ( contact is null )
+		return;
+
+	CBlob@ blockA = contact.blockA;
+	CBlob@ blockB = contact.blockB;
+	const bool solidA = contact.solidA;
+	const bool platformA = contact.platformA;
+
+	@contact.blockA = blockB;
+	@contact.blockB = blockA;
+	contact.mtv = -contact.mtv;
+	contact.solidA = contact.solidB;
+	contact.solidB = solidA;
+	contact.platformA = contact.platformB;
+	contact.platformB = platformA;
+}
+
+int GetIslandColor( Island@ isle )
+{
+	if ( isle is null || isle.centerBlock is null )
+		return 0;
+
+	return isle.centerBlock.getShape().getVars().customData;
+}
+
+bool IsCollisionCandidateBlock( CBlob@ block, bool &out solid, bool &out platform )
+{
+	solid = false;
+	platform = false;
+
+	if ( block is null || block.hasTag( "noCollide" ) )
+		return false;
+
+	const int type = block.getSprite().getFrame();
+	if ( type == Block::COUPLING || Block::isRepulsor( type ) )
+		return false;
+
+	solid = Block::isSolidCollisionBlock( type );
+	platform = Block::isPlatform( type );
+	return solid || platform;
+}
+
+bool GetBlockCollisionMTV( CBlob@ blockA, CBlob@ blockB, Vec2f blockAPos, Vec2f blockBPos, Vec2f &out mtv )
+{
+	Blob3D@ blob3dA;
+	Blob3D@ blob3dB;
+	if ( blockA.get( "blob3d", @blob3dA ) && blockB.get( "blob3d", @blob3dB )
+		&& blob3dA !is null && blob3dB !is null
+		&& blob3dA.shape !is null && blob3dB.shape !is null )
+	{
+		Vec3f mtv3d;
+		if ( blob3dA.shape.Contains( blob3dB.shape, Vec3f(), Vec3f(), mtv3d ) != ContainmentType::None )
+		{
+			mtv = Vec2f( mtv3d.x, mtv3d.z );
+			if ( mtv.LengthSquared() > 0.0001f )
+				return true;
+		}
+	}
+
+	return GetFallbackBlockMTV( blockAPos, blockBPos, mtv );
+}
+
+bool GetFallbackBlockMTV( Vec2f blockAPos, Vec2f blockBPos, Vec2f &out mtv )
+{
+	Vec2f delta = blockAPos - blockBPos;
+	f32 distance = delta.Normalize();
+	if ( distance < 0.001f )
+	{
+		delta = Vec2f( 1.0f, 0.0f );
+		distance = 0.0f;
+	}
+
+	const f32 overlap = Block::size - distance;
+	if ( overlap <= 0.0f )
+		return false;
+
+	mtv = delta * overlap;
+	return true;
+}
+
+bool HandlePlatformCollision( CRules@ rules, IslandCollisionContact@ contact )
+{
+	if ( contact is null )
+		return false;
+
+	const bool breakA = contact.platformA && contact.solidB;
+	const bool breakB = contact.platformB && contact.solidA;
+	if ( !breakA && !breakB )
+		return false;
+
+	if ( getNet().isServer() )
+	{
+		if ( breakA )
+			ServerDestroyCollisionBlock( contact.blockA );
+
+		if ( breakB )
+			ServerDestroyCollisionBlock( contact.blockB );
+
+		rules.set_bool( "dirty islands", true );
+	}
+
+	return true;
+}
+
+void ServerDestroyCollisionBlock( CBlob@ block )
+{
+	if ( block is null || !getNet().isServer() || block.hasTag( "noCollide" ) )
+		return;
+
+	block.Tag( "noCollide" );
+	block.server_Die();
+}
+
+void ApplySolidIslandCollision( Island@ island, Island@ other, IslandCollisionContact@ contact )
+{
+	if ( island is null || other is null || contact is null )
+		return;
+
+	Vec2f normal = contact.mtv;
+	f32 penetration = normal.Normalize();
+	if ( penetration <= 0.001f )
+	{
+		normal = island.pos - other.pos;
+		penetration = normal.Normalize();
+	}
+
+	if ( penetration <= 0.001f )
+		return;
+
+	const f32 baseInvMassA = GetIslandInverseMass( island );
+	const f32 baseInvMassB = GetIslandInverseMass( other );
+	const f32 invMassTotal = baseInvMassA + baseInvMassB;
+	if ( invMassTotal <= 0.0f )
+		return;
+
+	f32 shareA = baseInvMassA / invMassTotal;
+	f32 shareB = baseInvMassB / invMassTotal;
+	if ( !island.isStation && !other.isStation )
+	{
+		shareA = Maths::Clamp( shareA, SHIP_COLLISION_MIN_DYNAMIC_SHARE, 1.0f - SHIP_COLLISION_MIN_DYNAMIC_SHARE );
+		shareB = 1.0f - shareA;
+	}
+	const f32 invMassA = shareA * invMassTotal;
+	const f32 invMassB = shareB * invMassTotal;
+	const f32 invInertiaA = GetIslandInverseInertia( island );
+	const f32 invInertiaB = GetIslandInverseInertia( other );
+
+	Vec2f correction = normal * penetration * SHIP_COLLISION_POSITION_PERCENT;
+
+	island.pos += correction * shareA;
+	other.pos -= correction * shareB;
+
+	Vec2f centerA = GetIslandCenterOfMass( island );
+	Vec2f centerB = GetIslandCenterOfMass( other );
+	Vec2f armA = contact.point - centerA;
+	Vec2f armB = contact.point - centerB;
+	const f32 armCrossA = Cross2D( armA, normal );
+	const f32 armCrossB = Cross2D( armB, normal );
+	const f32 impulseDenominator = invMassA + invMassB + armCrossA * armCrossA * invInertiaA + armCrossB * armCrossB * invInertiaB;
+	if ( impulseDenominator <= 0.0001f )
+		return;
+
+	Vec2f relativeVelocity = GetIslandPointVelocity( island, contact.point ) - GetIslandPointVelocity( other, contact.point );
+	const f32 separatingVelocity = relativeVelocity * normal;
+	const f32 pushBias = Maths::Clamp( penetration * SHIP_COLLISION_PUSH_BIAS, SHIP_COLLISION_MIN_PUSH, SHIP_COLLISION_MAX_PUSH );
+
+	f32 impulseMagnitude = 0.0f;
+	if ( separatingVelocity < 0.0f )
+	{
+		impulseMagnitude = ( -( 1.0f + SHIP_COLLISION_RESTITUTION ) * separatingVelocity + pushBias ) / impulseDenominator;
+	}
+	else if ( separatingVelocity < pushBias )
+	{
+		impulseMagnitude = ( pushBias - separatingVelocity ) / impulseDenominator;
+	}
+
+	if ( impulseMagnitude > 0.0f )
+	{
+		Vec2f impulse = normal * impulseMagnitude;
+		island.vel += impulse * invMassA;
+		other.vel -= impulse * invMassB;
+
+		ApplyIslandAngularImpulse( island, contact.point, impulse, invInertiaA );
+		ApplyIslandAngularImpulse( other, contact.point, -impulse, invInertiaB );
+	}
+
+	if ( !island.isStation && !other.isStation )
+	{
+		const f32 separationBoost = Maths::Min( SHIP_COLLISION_MAX_PUSH, pushBias + penetration * SHIP_COLLISION_SEPARATION_BOOST );
+		island.vel += normal * separationBoost * shareA;
+		other.vel -= normal * separationBoost * shareB;
+	}
+
+	Vec2f tangentVelocity = relativeVelocity - normal * separatingVelocity;
+	if ( tangentVelocity.LengthSquared() > 0.0001f )
+	{
+		island.vel -= tangentVelocity * 0.035f * shareA;
+		other.vel += tangentVelocity * 0.035f * shareB;
+	}
+
+	LimitIslandMotion( island );
+	LimitIslandMotion( other );
+}
+
+f32 GetIslandEffectiveMass( Island@ isle )
+{
+	if ( isle is null )
+		return 1.0f;
+
+	return Maths::Max( 1.0f, Maths::Sqrt( isle.mass + isle.carryMass ) );
+}
+
+f32 GetIslandInverseMass( Island@ isle )
+{
+	if ( isle is null || isle.isStation )
+		return 0.0f;
+
+	return 1.0f / GetIslandEffectiveMass( isle );
+}
+
+f32 GetIslandInverseInertia( Island@ isle )
+{
+	if ( isle is null || isle.isStation )
+		return 0.0f;
+
+	if ( isle.momentOfInertia <= 0.0f )
+		RebuildIslandPhysicsProperties( isle );
+
+	return isle.momentOfInertia > 0.0f ? 1.0f / isle.momentOfInertia : 0.0f;
+}
+
+Vec2f GetIslandCenterOfMass( Island@ isle )
+{
+	if ( isle is null )
+		return Vec2f_zero;
+
+	Vec2f offset = isle.centerOfMassOffset;
+	offset.RotateBy( isle.angle );
+	return isle.pos + offset;
+}
+
+Vec2f GetIslandPointVelocity( Island@ isle, Vec2f point )
+{
+	if ( isle is null )
+		return Vec2f_zero;
+
+	Vec2f arm = point - GetIslandCenterOfMass( isle );
+	const f32 angularRadians = isle.angle_vel * Maths::Pi / 180.0f;
+	return isle.vel + Vec2f( -arm.y, arm.x ) * angularRadians;
+}
+
+f32 Cross2D( Vec2f a, Vec2f b )
+{
+	return a.x * b.y - a.y * b.x;
+}
+
+void ApplyIslandAngularImpulse( Island@ isle, Vec2f point, Vec2f impulse, f32 invInertia )
+{
+	if ( isle is null || isle.isStation || invInertia <= 0.0f )
+		return;
+
+	Vec2f arm = point - GetIslandCenterOfMass( isle );
+	const f32 torque = Cross2D( arm, impulse );
+	const f32 deltaAngularVelocity = torque * invInertia * 180.0f / Maths::Pi * SHIP_COLLISION_ANGULAR_TRANSFER;
+	isle.angle_vel += Maths::Clamp( deltaAngularVelocity, -SHIP_COLLISION_MAX_ANGULAR_KICK, SHIP_COLLISION_MAX_ANGULAR_KICK );
+}
+
+void LimitIslandMotion( Island@ isle )
+{
+	if ( isle is null )
+		return;
+
+	const f32 speedSquared = isle.vel.LengthSquared();
+	const f32 maxSpeedSquared = SHIP_MAX_SPEED * SHIP_MAX_SPEED;
+	if ( speedSquared > maxSpeedSquared )
+	{
+		isle.vel *= SHIP_MAX_SPEED / Maths::Sqrt( speedSquared );
+	}
+
+	isle.angle_vel = Maths::Clamp( isle.angle_vel, -SHIP_MAX_ANGLE_SPEED, SHIP_MAX_ANGLE_SPEED );
+}
+
+void RefreshIslandBlobs( Island@ isle )
+{
+	if ( isle is null )
+		return;
+
+	for (uint b_iter = 0; b_iter < isle.blocks.length; ++b_iter)
+	{
+		IslandBlock@ isle_block = isle.blocks[b_iter];
+		if ( isle_block is null )
+			continue;
+
+		CBlob@ b = getBlobByNetworkID( isle_block.blobID );
+		if ( b !is null )
+			UpdateIslandBlob( b, isle, isle_block );
+	}
 }
 
 void TileCollision( Island@ island, Vec2f tilePos )
@@ -446,21 +1124,20 @@ void TileCollision( Island@ island, Vec2f tilePos )
 	if ( island.mass <= 0 )
 		return;
 	
-	Vec2f velnorm = island.vel; 
-	const f32 vellen = velnorm.Normalize();
-	
-	Vec2f colvec1 = tilePos - island.pos;
-	colvec1.Normalize();
+	Vec2f normal = island.pos - tilePos;
+	if ( normal.Normalize() <= 0.001f )
+		return;
 
-	const f32 veltransfer = 1.0f;
-	const f32 veldamp = 1.0f;
-	const f32 dirscale = 1.0f;
-	f32 reactionScale2 = 1.0f;
-	if ( island.beached )
-		reactionScale2 *= 2;
-	island.vel *= veldamp;
-	
-	island.vel = -colvec1*1.0f;
+	const f32 incomingSpeed = island.vel * normal;
+	if ( incomingSpeed < 0.0f )
+	{
+		island.vel -= normal * incomingSpeed * 1.35f;
+	}
+
+	island.vel += normal * 0.35f;
+	island.vel *= 0.86f;
+	island.angle_vel *= 0.88f;
+	LimitIslandMotion( island );
 	
 	//effects
 
@@ -710,11 +1387,6 @@ void onCommand( CRules@ this, u8 cmd, CBitStream @params )
 				if ( isle.centerBlock !is null )
 				{
 					isle.initialized = true;
-					if ( isle.vel.LengthSquared() > 0.01f )//try to use local values to smoother sync
-					{
-						isle.pos = isle.centerBlock.getInterpolatedPosition();
-						isle.angle = isle.centerBlock.getAngleDegrees();
-					}
 				}
 
 				isle.old_pos = isle.pos;
@@ -827,7 +1499,7 @@ void onCommand( CRules@ this, u8 cmd, CBitStream @params )
 					}
 				}
 			}
-			//no need to UpdateIslands()
+			UpdateIslands( this, false );
 		}
 		else
 		{
@@ -850,6 +1522,35 @@ bool isIslandChanged( Island@ isle )
 }
 
 bool candy = false;
+
+void ShowWaveSampleOffset( CRules@ rules )
+{
+	if (rules is null)
+		return;
+
+	client_AddToChat(
+		"Wave sample offset: x "
+		+ rules.get_f32(SHIP_WAVE_SAMPLE_OFFSET_X)
+		+ ", y "
+		+ rules.get_f32(SHIP_WAVE_SAMPLE_OFFSET_Y)
+		+ ", z "
+		+ rules.get_f32(SHIP_WAVE_SAMPLE_OFFSET_Z)
+		+ " | debug "
+		+ (rules.get_bool(SHIP_WAVE_SAMPLE_DEBUG) ? "on" : "off")
+		+ " | visuals "
+		+ (rules.get_bool(SHIP_WAVE_VISUALS_DISABLED) ? "off" : "on")
+	);
+}
+
+void AddWaveSampleOffset( CRules@ rules, const string &in key, const f32 amount )
+{
+	if (rules is null)
+		return;
+
+	rules.set_f32(key, rules.get_f32(key) + amount);
+	ShowWaveSampleOffset(rules);
+}
+
 bool onClientProcessChat( CRules@ this, const string &in textIn, string &out textOut, CPlayer@ player )
 {	
 	if (  player !is null )
@@ -875,6 +1576,73 @@ bool onClientProcessChat( CRules@ this, const string &in textIn, string &out tex
 						client_AddToChat( "Delta smoothness set to " + UPDATE_DELTA_SMOOTHNESS );
 					} else
 						client_AddToChat( "Delta smoothness: " + UPDATE_DELTA_SMOOTHNESS );
+				}
+				return false;
+			}
+
+			if (tokens[0] == "!wave")
+			{
+				if ( myPlayer )
+				{
+					if (tokens.length <= 1)
+					{
+						ShowWaveSampleOffset(this);
+					}
+					else if (tokens[1] == "debug")
+					{
+						this.set_bool(SHIP_WAVE_SAMPLE_DEBUG, !this.get_bool(SHIP_WAVE_SAMPLE_DEBUG));
+						ShowWaveSampleOffset(this);
+					}
+					else if (tokens[1] == "off" || tokens[1] == "disable")
+					{
+						this.set_bool(SHIP_WAVE_VISUALS_DISABLED, true);
+						ShowWaveSampleOffset(this);
+					}
+					else if (tokens[1] == "on" || tokens[1] == "enable")
+					{
+						this.set_bool(SHIP_WAVE_VISUALS_DISABLED, false);
+						ShowWaveSampleOffset(this);
+					}
+					else if (tokens[1] == "toggle")
+					{
+						this.set_bool(SHIP_WAVE_VISUALS_DISABLED, !this.get_bool(SHIP_WAVE_VISUALS_DISABLED));
+						ShowWaveSampleOffset(this);
+					}
+					else if (tokens[1] == "reset")
+					{
+						this.set_f32(SHIP_WAVE_SAMPLE_OFFSET_X, 0.0f);
+						this.set_f32(SHIP_WAVE_SAMPLE_OFFSET_Y, 0.0f);
+						this.set_f32(SHIP_WAVE_SAMPLE_OFFSET_Z, 0.0f);
+						ShowWaveSampleOffset(this);
+					}
+					else if (tokens[1] == "x+")
+					{
+						AddWaveSampleOffset(this, SHIP_WAVE_SAMPLE_OFFSET_X, 8.0f);
+					}
+					else if (tokens[1] == "x-")
+					{
+						AddWaveSampleOffset(this, SHIP_WAVE_SAMPLE_OFFSET_X, -8.0f);
+					}
+					else if (tokens[1] == "y+")
+					{
+						AddWaveSampleOffset(this, SHIP_WAVE_SAMPLE_OFFSET_Y, 8.0f);
+					}
+					else if (tokens[1] == "y-")
+					{
+						AddWaveSampleOffset(this, SHIP_WAVE_SAMPLE_OFFSET_Y, -8.0f);
+					}
+					else if (tokens[1] == "z+")
+					{
+						AddWaveSampleOffset(this, SHIP_WAVE_SAMPLE_OFFSET_Z, 8.0f);
+					}
+					else if (tokens[1] == "z-")
+					{
+						AddWaveSampleOffset(this, SHIP_WAVE_SAMPLE_OFFSET_Z, -8.0f);
+					}
+					else
+					{
+						client_AddToChat("Usage: !wave [on|off|toggle|debug|reset|x+|x-|y+|y-|z+|z-]");
+					}
 				}
 				return false;
 			}

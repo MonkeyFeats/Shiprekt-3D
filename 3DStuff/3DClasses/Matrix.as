@@ -1,4 +1,5 @@
 
+#include "Vec3f.as"
 #include "Vec4f.as"
 //#include "BoundingSphere.as"
 //#include "BoundingBox.as"
@@ -42,12 +43,12 @@ shared class MatrixR//eloaded :)
 
     Vec3f Backward
     {
-        get { return Vec3f(this.Array[8], this.Array[9], this.Array[10]); }
+        get { return Vec3f(-this.Array[8], -this.Array[9], -this.Array[10]); }
         set
         {
-            this.Array[8] = value.x;
-            this.Array[9] = value.y;
-            this.Array[10] = value.z;
+            this.Array[8] = -value.x;
+            this.Array[9] = -value.y;
+            this.Array[10] = -value.z;
         }
     }
     
@@ -65,12 +66,12 @@ shared class MatrixR//eloaded :)
     
     Vec3f Forward
     {
-        get { return Vec3f(-this.Array[8], -this.Array[9], -this.Array[10]); }
+        get { return Vec3f(this.Array[8], this.Array[9], this.Array[10]); }
         set
         {
-            this.Array[8] = -value.x;
-            this.Array[9] = -value.y;
-            this.Array[10] = -value.z;
+            this.Array[8] = value.x;
+            this.Array[9] = value.y;
+            this.Array[10] = value.z;
         }
     }
     
@@ -140,30 +141,25 @@ shared class MatrixR//eloaded :)
         this.Array[14] = this.Array[14] + matrix2.Array[14];
         this.Array[15] = this.Array[15] + matrix2.Array[15];
     }
-    Vec3f Cross(Vec3f vec1, Vec3f vec2)
-    {
-        return Vec3f(vec1.y * vec2.z - vec2.y * vec1.z,
-                   -(vec1.x * vec2.z - vec2.x * vec1.z),
-                     vec1.x * vec2.y - vec2.x * vec1.y);
-    }
+
     void CreateBillboard( Vec3f objectPosition, Vec3f cameraPosition, Vec3f cameraUpVector, Vec3f cameraForwardVector)
     {
         Vec3f vector, vector2, vector3;
 	    vector.x = objectPosition.x - cameraPosition.x;
 	    vector.y = objectPosition.y - cameraPosition.y;
 	    vector.z = objectPosition.z - cameraPosition.z;
-	    float num = vector.lengthSquared();
+	    float num = vector.LengthSquared();
 	    if (num < 0.0001f)
 	    {
 	        vector = -cameraForwardVector;
 	    }
 	    else
 	    {
-	        vector.opMulAssign(1.0f / Maths::Sqrt(num));
+	        vector.Multiply(vector, float(1.0f / float(Maths::Sqrt(float(num)))));
 	    }
-	    vector3 = Cross(cameraUpVector, vector);
-	    vector3.normalize();
-	    vector2 = Cross(vector, vector3);
+	    vector3.Cross(cameraUpVector, vector);
+	    vector3.Normalize();
+	    vector2.Cross(vector, vector3);
 	    this.Array[0] = vector3.x;
 	    this.Array[1] = vector3.y;
 	    this.Array[2] = vector3.z;
@@ -191,23 +187,23 @@ shared class MatrixR//eloaded :)
 	    vector2.x = objectPosition.x - cameraPosition.x;
 	    vector2.y = objectPosition.y - cameraPosition.y;
 	    vector2.z = objectPosition.z - cameraPosition.z;
-	    float num2 = vector2.lengthSquared();
+	    float num2 = vector2.LengthSquared();
 	    if (num2 < 0.0001f)
 	    {
 	        vector2 = -cameraForwardVector;
 	    }
 	    else
 	    {
-	       vector2.opMulAssign(1.0f / Maths::Sqrt(num2));
+	       vector2.Multiply(vector2, float((1.0f / float(Maths::Sqrt(float(num2)))) ));
 	    }
 	    Vec3f vector4 = rotateAxis;
-	    num = rotateAxis.opMul(vector2);
+	    num = Dot(rotateAxis, vector2);
 	    if (Maths::Abs(num) > 0.9982547f)
 	    {
 	        if (objectForwardVector != Vec3f())
 	        {
 	            vector = objectForwardVector;
-	            num = rotateAxis.opMul(vector);
+	            num = Dot(rotateAxis, vector);
 	            if (Maths::Abs(num) > 0.9982547f)
 	            {
 	                num = ((rotateAxis.x * Forward.x) + (rotateAxis.y * Forward.y)) + (rotateAxis.z * Forward.z);
@@ -219,17 +215,17 @@ shared class MatrixR//eloaded :)
 	            num = ((rotateAxis.x * Forward.x) + (rotateAxis.y * Forward.y)) + (rotateAxis.z * Forward.z);
 	            vector = (Maths::Abs(num) > 0.9982547f) ? Right : Forward;
 	        }
-	        vector3 = Cross(rotateAxis, vector); //vector3.Cross(rotateAxis, vector);
-	        vector3.normalize();
-	        vector = Cross(vector3, rotateAxis); //vector.Cross(vector3, rotateAxis);
-	        vector.normalize();
+	        vector3.Cross(rotateAxis, vector);
+	        vector3.Normalize();
+	        vector.Cross(vector3, rotateAxis);
+	        vector.Normalize();
 	    }
 	    else
 	    {
-	        vector3 = Cross(rotateAxis, vector2);
-	        vector3.normalize();
-	        vector = Cross(vector3, vector4);
-	        vector.normalize();
+	        vector3.Cross(rotateAxis, vector2);
+	        vector3.Normalize();
+	        vector.Cross(vector3, vector4 );
+	        vector.Normalize();
 	    }
 	    this.Array[0] = vector3.x;
 	    this.Array[1] = vector3.y;
@@ -326,8 +322,8 @@ shared class MatrixR//eloaded :)
 
     void CreateLookAt(Vec3f cameraPosition, Vec3f cameraTarget, Vec3f cameraUpVector)
     {
-        Vec3f vector = (cameraPosition - cameraTarget); vector.normalize();
-	    Vec3f vector2 = Cross(cameraUpVector, vector); vector2.normalize();
+        Vec3f vector = Normalize(cameraTarget - cameraPosition);
+	    Vec3f vector2 = Normalize(Cross(cameraUpVector, vector));
 	    Vec3f vector3 = Cross(vector, vector2);
 	    this.Array[0] = vector2.x;
 	    this.Array[1] = vector3.x;
@@ -341,9 +337,9 @@ shared class MatrixR//eloaded :)
 	    this.Array[9] = vector3.z;
 	    this.Array[10] = vector.z;
 	    this.Array[11] = 0.0f;
-	    this.Array[12] = -vector2.opMul(cameraPosition);
-	    this.Array[13] = -vector3.opMul(cameraPosition);
-	    this.Array[14] = -vector.opMul(cameraPosition);
+	    this.Array[12] = -Dot(vector2, cameraPosition);
+	    this.Array[13] = -Dot(vector3, cameraPosition);
+	    this.Array[14] = -Dot(vector, cameraPosition);
 	    this.Array[15] = 1.0f;
     }
 
@@ -453,8 +449,8 @@ shared class MatrixR//eloaded :)
 
     void MakeShadowMatrix(const Vec3f light, Plane plane, f32 point)
     {
-        plane.Normal.normalize();
-        const f32 d = plane.Normal.opMul(light);
+        plane.Normal.Normalize();
+        const f32 d = plane.Normal.Dot(light);
  
         this.Array[ 0] = (-plane.Normal.x * light.x + d);
         this.Array[ 1] = (-plane.Normal.x * light.y);
@@ -553,12 +549,13 @@ shared class MatrixR//eloaded :)
         this.Array[10] = val1;
     }
 
-    //void rotateVec( Vec3f &in tmp,  Vec3f &out vec)
-    //{
-    //    vec.x = tmp.x*this.Array[0] + tmp.y*this.Array[4] + tmp.z*this.Array[8];
-    //    vec.y = tmp.x*this.Array[1] + tmp.y*this.Array[5] + tmp.z*this.Array[9];
-    //    vec.z = tmp.x*this.Array[2] + tmp.y*this.Array[6] + tmp.z*this.Array[10];
-    //} 
+    void rotateVec( Vec3f & vec )
+    {
+        Vec3f tmp = vec;
+        vec.x = tmp.x*this.Array[0] + tmp.y*this.Array[4] + tmp.z*this.Array[8];
+        vec.y = tmp.x*this.Array[1] + tmp.y*this.Array[5] + tmp.z*this.Array[9];
+        vec.z = tmp.x*this.Array[2] + tmp.y*this.Array[6] + tmp.z*this.Array[10];
+    } 
 
     void SetTranslation(float xPosition, float yPosition, float zPosition)
     {
@@ -802,20 +799,20 @@ shared class MatrixR//eloaded :)
 
     void Multiply(MatrixR matrix2)
     {
-        float m11 = (( (this.Array[0] * matrix2.Array[0]) +  (this.Array[1] * matrix2.Array[4])) +  (this.Array[2] * matrix2.Array[8])) +   (this.Array[3] * matrix2.Array[12]);
-        float m12 = (( (this.Array[0] * matrix2.Array[1]) +  (this.Array[1] * matrix2.Array[5])) +  (this.Array[2] * matrix2.Array[9])) +   (this.Array[3] * matrix2.Array[13]);
-        float m13 = (( (this.Array[0] * matrix2.Array[2]) +  (this.Array[1] * matrix2.Array[6])) +  (this.Array[2] * matrix2.Array[10])) +  (this.Array[3] * matrix2.Array[14]);
-        float m14 = (( (this.Array[0] * matrix2.Array[3]) +  (this.Array[1] * matrix2.Array[7])) +  (this.Array[2] * matrix2.Array[11])) +  (this.Array[3] * matrix2.Array[15]);
-        float m21 = (( (this.Array[4] * matrix2.Array[0]) +  (this.Array[5] * matrix2.Array[4])) +  (this.Array[6] * matrix2.Array[8])) +   (this.Array[7] * matrix2.Array[12]);
-        float m22 = (( (this.Array[4] * matrix2.Array[1]) +  (this.Array[5] * matrix2.Array[5])) +  (this.Array[6] * matrix2.Array[9])) +   (this.Array[7] * matrix2.Array[13]);
-        float m23 = (( (this.Array[4] * matrix2.Array[2]) +  (this.Array[5] * matrix2.Array[6])) +  (this.Array[6] * matrix2.Array[10])) +  (this.Array[7] * matrix2.Array[14]);
-        float m24 = (( (this.Array[4] * matrix2.Array[3]) +  (this.Array[5] * matrix2.Array[7])) +  (this.Array[6] * matrix2.Array[11])) +  (this.Array[7] * matrix2.Array[15]);
-        float m31 = (( (this.Array[8] * matrix2.Array[0]) +  (this.Array[9] * matrix2.Array[4])) + (this.Array[10] * matrix2.Array[8])) +  (this.Array[11] * matrix2.Array[12]);
-        float m32 = (( (this.Array[8] * matrix2.Array[1]) +  (this.Array[9] * matrix2.Array[5])) + (this.Array[10] * matrix2.Array[9])) +  (this.Array[11] * matrix2.Array[13]);
-        float m33 = (( (this.Array[8] * matrix2.Array[2]) +  (this.Array[9] * matrix2.Array[6])) + (this.Array[10] * matrix2.Array[10])) + (this.Array[11] * matrix2.Array[14]);
-        float m34 = (( (this.Array[8] * matrix2.Array[3]) +  (this.Array[9] * matrix2.Array[7])) + (this.Array[10] * matrix2.Array[11])) + (this.Array[11] * matrix2.Array[15]);
-        float m41 = (((this.Array[12] * matrix2.Array[0]) + (this.Array[13] * matrix2.Array[4])) + (this.Array[14] * matrix2.Array[8])) +  (this.Array[15] * matrix2.Array[12]);
-        float m42 = (((this.Array[12] * matrix2.Array[1]) + (this.Array[13] * matrix2.Array[5])) + (this.Array[14] * matrix2.Array[9])) +  (this.Array[15] * matrix2.Array[13]);
+        float m11 = (((this.Array[0] * matrix2.Array[0]) + (this.Array[1] * matrix2.Array[4])) + (this.Array[2] * matrix2.Array[8])) + (this.Array[3] * matrix2.Array[12]);
+        float m12 = (((this.Array[0] * matrix2.Array[1]) + (this.Array[1] * matrix2.Array[5])) + (this.Array[2] * matrix2.Array[9])) + (this.Array[3] * matrix2.Array[13]);
+        float m13 = (((this.Array[0] * matrix2.Array[2]) + (this.Array[1] * matrix2.Array[6])) + (this.Array[2] * matrix2.Array[10])) + (this.Array[3] * matrix2.Array[14]);
+        float m14 = (((this.Array[0] * matrix2.Array[3]) + (this.Array[1] * matrix2.Array[7])) + (this.Array[2] * matrix2.Array[11])) + (this.Array[3] * matrix2.Array[15]);
+        float m21 = (((this.Array[4] * matrix2.Array[0]) + (this.Array[5] * matrix2.Array[4])) + (this.Array[6] * matrix2.Array[8])) + (this.Array[7] * matrix2.Array[12]);
+        float m22 = (((this.Array[4] * matrix2.Array[1]) + (this.Array[5] * matrix2.Array[5])) + (this.Array[6] * matrix2.Array[9])) + (this.Array[7] * matrix2.Array[13]);
+        float m23 = (((this.Array[4] * matrix2.Array[2]) + (this.Array[5] * matrix2.Array[6])) + (this.Array[6] * matrix2.Array[10])) + (this.Array[7] * matrix2.Array[14]);
+        float m24 = (((this.Array[4] * matrix2.Array[3]) + (this.Array[5] * matrix2.Array[7])) + (this.Array[6] * matrix2.Array[11])) + (this.Array[7] * matrix2.Array[15]);
+        float m31 = (((this.Array[8] * matrix2.Array[0]) + (this.Array[9] * matrix2.Array[4])) + (this.Array[10] * matrix2.Array[8])) + (this.Array[11] * matrix2.Array[12]);
+        float m32 = (((this.Array[8] * matrix2.Array[1]) + (this.Array[9] * matrix2.Array[5])) + (this.Array[10] * matrix2.Array[9])) + (this.Array[11] * matrix2.Array[13]);
+        float m33 = (((this.Array[8] * matrix2.Array[2]) + (this.Array[9] * matrix2.Array[6])) + (this.Array[10] * matrix2.Array[10])) + (this.Array[11] * matrix2.Array[14]);
+        float m34 = (((this.Array[8] * matrix2.Array[3]) + (this.Array[9] * matrix2.Array[7])) + (this.Array[10] * matrix2.Array[11])) + (this.Array[11] * matrix2.Array[15]);
+        float m41 = (((this.Array[12] * matrix2.Array[0]) + (this.Array[13] * matrix2.Array[4])) + (this.Array[14] * matrix2.Array[8])) + (this.Array[15] * matrix2.Array[12]);
+        float m42 = (((this.Array[12] * matrix2.Array[1]) + (this.Array[13] * matrix2.Array[5])) + (this.Array[14] * matrix2.Array[9])) + (this.Array[15] * matrix2.Array[13]);
         float m43 = (((this.Array[12] * matrix2.Array[2]) + (this.Array[13] * matrix2.Array[6])) + (this.Array[14] * matrix2.Array[10])) + (this.Array[15] * matrix2.Array[14]);
        	float m44 = (((this.Array[12] * matrix2.Array[3]) + (this.Array[13] * matrix2.Array[7])) + (this.Array[14] * matrix2.Array[11])) + (this.Array[15] * matrix2.Array[15]);
         this.Array[0] =  m11; this.Array[1] =  m12; this.Array[2] =  m13; this.Array[3] =  m14;
@@ -824,24 +821,24 @@ shared class MatrixR//eloaded :)
 		this.Array[12] = m41; this.Array[13] = m42; this.Array[14] = m43; this.Array[15] = m44;      
     }
 
-    void Multiply(float scalar)
+    void Multiply(float factor)
     {
-        this.Array[0] = this.Array[0] * scalar;
-        this.Array[1] = this.Array[1] * scalar;
-        this.Array[2] = this.Array[2] * scalar;
-        this.Array[3] = this.Array[3] * scalar;
-        this.Array[4] = this.Array[4] * scalar;
-        this.Array[5] = this.Array[5] * scalar;
-        this.Array[6] = this.Array[6] * scalar;
-        this.Array[7] = this.Array[7] * scalar;
-        this.Array[8] = this.Array[8] * scalar;
-        this.Array[9] = this.Array[9] * scalar;
-        this.Array[10] = this.Array[10] * scalar;
-        this.Array[11] = this.Array[11] * scalar;
-        this.Array[12] = this.Array[12] * scalar;
-        this.Array[13] = this.Array[13] * scalar;
-        this.Array[14] = this.Array[14] * scalar;
-        this.Array[15] = this.Array[15] * scalar;
+        this.Array[0] = this.Array[0] * factor;
+        this.Array[1] = this.Array[1] * factor;
+        this.Array[2] = this.Array[2] * factor;
+        this.Array[3] = this.Array[3] * factor;
+        this.Array[4] = this.Array[4] * factor;
+        this.Array[5] = this.Array[5] * factor;
+        this.Array[6] = this.Array[6] * factor;
+        this.Array[7] = this.Array[7] * factor;
+        this.Array[8] = this.Array[8] * factor;
+        this.Array[9] = this.Array[9] * factor;
+        this.Array[10] = this.Array[10] * factor;
+        this.Array[11] = this.Array[11] * factor;
+        this.Array[12] = this.Array[12] * factor;
+        this.Array[13] = this.Array[13] * factor;
+        this.Array[14] = this.Array[14] * factor;
+        this.Array[15] = this.Array[15] * factor;
     }
 
     void Negate()

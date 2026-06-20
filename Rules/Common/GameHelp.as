@@ -10,7 +10,6 @@ bool page1 = true;
 const int slotsSize = 6;
 f32 boxMargin = 50.0f;
 //key names
-const string party_key = getControls().getActionKeyKeyName( AK_PARTY );
 const string inv_key = getControls().getActionKeyKeyName( AK_INVENTORY );
 const string pick_key = getControls().getActionKeyKeyName( AK_PICKUP );
 const string taunts_key = getControls().getActionKeyKeyName( AK_TAUNTS );
@@ -91,11 +90,10 @@ void onRender( CRules@ this )
 		"- Default Controls:\n" +
 		" [ " + inv_key + " ] get Blocks while aboard your Mothership. Produces couplings while in a seat.\n"+
 		" [ " + action3_key + " ]  rotate blocks while building or release couplings when sitting.\n"+
-		" [ " + action1_key + " ] punch when standing or fire Machineguns when sitting.\n"+
-		" [ " + action2_key + " ]  <hold> fire handgun.\n"+
+		" [ " + action1_key + " ] use selected tool when standing or fire Machineguns when sitting.\n"+
+		" [ " + action2_key + " ]  <hold> select tool.\n"+
 		" [ MOUSE MIDDLE ]  <hold> show point emote.\n"+
 		" [ " + zoomIn_key + " ], [ " + zoomOut_key + " ]  zoom in/out.\n"+
-		" [ " + party_key + " ]  access the tools menu.\n"+
 		" [ " + map_key + " ]  scale the Compass 2x. Tap to toggle. Hold for a quick view.\n"+
 		" [ " + pick_key + " ] OR [ " + taunts_key + " ]  <hold> toggle engines strafe mode.";
 

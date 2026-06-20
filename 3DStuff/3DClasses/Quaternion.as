@@ -82,13 +82,11 @@ shared class Quaternion
         result.x = transformedX;
         result.y = transformedY;
         result.z = transformedZ;
-        //result.normalize();
     } 
 
     Vec3f Transform(Vec3f v)
     {
         Vec3f result;
-        //this.Normalize();
         float x2 = this.x + this.x;
         float y2 = this.y + this.y;
         float z2 = this.z + this.z;
@@ -108,7 +106,6 @@ shared class Quaternion
         result.x = transformedX;
         result.y = transformedY;
         result.z = transformedZ;
-        //result.normalize();
         return result;
     } 
 
@@ -249,12 +246,6 @@ shared class Quaternion
         return quaternion;
     }
 
-    void Conjugate()
-    {
-        Quaternion quaternion( -this.x, -this.y, -this.z, this.w);
-        this = quaternion;
-    }
-
     Quaternion CreateFromAxisAngle(Vec3f axis, float angle)
     {
         float halfAngle = angle * .5f;
@@ -267,7 +258,7 @@ shared class Quaternion
         return quaternion;
     }
 
-    void CreateFromAxisAngle(Vec3f axis, float angle, Quaternion &out result)
+    void CreateFromAxisAngle(Vec3f@ axis, float angle, Quaternion &out result)
     {
         float halfAngle = angle * .5f;
         float s = float(Maths::Sin(halfAngle));
@@ -389,22 +380,10 @@ shared class Quaternion
         }
     }
 
-    f32 Dot(Vec3f vec1, Vec3f vec2)
-    {
-        return vec1.x * vec2.x + vec1.y * vec2.y + vec1.z * vec2.z;
-    }  
-
-    Vec3f Cross(Vec3f vec1, Vec3f vec2) const
-    {
-        return Vec3f(vec1.y * vec2.z - vec2.y * vec1.z,
-                   -(vec1.x * vec2.z - vec2.x * vec1.z),
-                     vec1.x * vec2.y - vec2.x * vec1.y);
-    }
-
     /// Computes the quaternion rotation between two normalized vectors.
     void GetQuaternionBetweenNormalizedVectors( Vec3f v1, Vec3f v2, Quaternion &out q)
     {
-        float dot = Dot(v1,v2);        
+        float dot = v1.Dot(v2);        
         //For non-normal vectors, the multiplying the axes length squared would be necessary:
         //float w = dot + (float)Maths::Sqrt(v1.LengthSquared() * v2.LengthSquared());
         if (dot < -0.9999f) //parallel, opposing direction
@@ -426,7 +405,7 @@ shared class Quaternion
         }
         else
         {
-            Vec3f axis = Cross(v1, v2);
+            Vec3f axis = v1.Cross(v2);
             q = Quaternion(axis.x, axis.y, axis.z, dot + 1);
         }
         q.Normalize();
@@ -963,6 +942,29 @@ shared class Quaternion
 //        return sb.ToString();
 //    }
 
+    void Rotate(Vec3f angularVelocity)
+    {
+        float angle = angularVelocity.Length();
+
+        if (angle <= 0.00001f)
+            return;
+
+        Vec3f axis = angularVelocity;
+        axis.Normalize();
+
+        float halfAngle = angle * 0.5f;
+
+        Quaternion delta(
+            axis.x * Maths::Sin(halfAngle),
+            axis.y * Maths::Sin(halfAngle),
+            axis.z * Maths::Sin(halfAngle),
+            Maths::Cos(halfAngle)
+        );
+
+        this = delta * this;
+        Normalize();
+    }
+
     MatrixR ToMatrixR()
     {
         // source -> http://content.gpwiki.org/index.php/OpenGL:Tutorials:Using_Quaternions_to_represent_rotation#Quaternion_to_MatrixR
@@ -1091,45 +1093,29 @@ shared void Transform(Vec3f v, Quaternion rotation, Vec3f &out result)
     result.x = v.x * (1.0f - yy2 - zz2) + v.y * (xy2 - wz2) + v.z * (xz2 + wy2);
     result.y = v.x * (xy2 + wz2) + v.y * (1.0f - xx2 - zz2) + v.z * (yz2 - wx2);
     result.z = v.x * (xz2 - wy2) + v.y * (yz2 + wx2) + v.z * (1.0f - xx2 - yy2);
-
-    result.normalize();
 } 
 
 shared Quaternion QuaternionFromEuler(Vec3f euler)
 {
-    euler.x *= 0.5*((Maths::Pi)/180);
-    euler.y *= 0.5*((Maths::Pi)/180);
-    euler.z *= 0.5*((Maths::Pi)/180);
+    euler.x *= 0.5f;
+    euler.y *= 0.5f;
+    euler.z *= 0.5f;
 
-    const float fSinPitch = (Maths::Sin(euler.x));
-    const float fCosPitch = (Maths::Cos(euler.x));
-    const float fSinYaw = (Maths::Sin(euler.y));
-    const float fCosYaw = (Maths::Cos(euler.y));
-    const float fSinRoll = (Maths::Sin(euler.z));
-    const float fCosRoll = (Maths::Cos(euler.z));
-    const float fCosPitchCosYaw = (fCosPitch*fCosYaw);
-    const float fSinPitchSinYaw = (fSinPitch*fSinYaw);
+    float c1 = Maths::Cos(euler.y);
+    float s1 = Maths::Sin(euler.y);
+    float c2 = Maths::Cos(euler.z);
+    float s2 = Maths::Sin(euler.z);
+    float c3 = Maths::Cos(euler.x);
+    float s3 = Maths::Sin(euler.x);
+    float c1c2 = c1*c2;
+    float s1s2 = s1*s2;
+    float s1c2 = s1*c2;
+    float c1s2 = c1*s2;
 
     Quaternion q;
-    q.x = fSinRoll * fCosPitchCosYaw     - fCosRoll * fSinPitchSinYaw;
-    q.y = fCosRoll * fSinPitch * fCosYaw + fSinRoll * fCosPitch * fSinYaw;
-    q.z = fCosRoll * fCosPitch * fSinYaw - fSinRoll * fSinPitch * fCosYaw;
-    q.w = fCosRoll * fCosPitchCosYaw     + fSinRoll * fSinPitchSinYaw;    
+    q.w = c1c2*c3 - s1s2*s3;
+    q.x = c1c2*s3 + s1s2*c3;
+    q.y = s1c2*c3 + c1s2*s3;
+    q.z = c1s2*c3 - s1c2*s3;
     return q;
 }
-
-//inline aiQuaterniont<TReal>::aiQuaterniont( TReal fPitch, TReal fYaw, TReal fRoll )
-//{
-//    const float fSinPitch = (Maths::Sin(fPitch*(0.5)));
-//    const float fCosPitch = (Maths::Cos(fPitch*(0.5)));
-//    const float fSinYaw = (Maths::Sin(fYaw*(0.5)));
-//    const float fCosYaw = (Maths::Cos(fYaw*(0.5)));
-//    const float fSinRoll = (Maths::Sin(fRoll*(0.5)));
-//    const float fCosRoll = (Maths::Cos(fRoll*(0.5)));
-//    const float fCosPitchCosYaw = (fCosPitch*fCosYaw);
-//    const float fSinPitchSinYaw = (fSinPitch*fSinYaw);
-//    x = fSinRoll * fCosPitchCosYaw     - fCosRoll * fSinPitchSinYaw;
-//    y = fCosRoll * fSinPitch * fCosYaw + fSinRoll * fCosPitch * fSinYaw;
-//    z = fCosRoll * fCosPitch * fSinYaw - fSinRoll * fSinPitch * fCosYaw;
-//    w = fCosRoll * fCosPitchCosYaw     + fSinRoll * fSinPitchSinYaw;
-//}

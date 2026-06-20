@@ -1,4 +1,4 @@
-
+#include "Vec3f.as"
 #include "SAT_Shapes.as"
 #include "BlockCommon.as"
 
@@ -55,6 +55,7 @@ namespace Human
 }
 
 const string camera_sync_cmd = "camerasync";
+const string HUMAN_SEAT_RENDER_YAW = "human seat render yaw";
 
 void SyncCamera(CBlob@ this)
 {

@@ -1,6 +1,7 @@
 #include "CustomMap.as";
 #include "SR3DLoaderColors.as";
 #include "ShapeArrays.as";
+#include "Vec3f.as";
 #include "Triangle3D.as";
 
 const string sandtex_name = "SandTexture.png";
@@ -18,15 +19,12 @@ shared class TerrainChunk
 	BoundingShape@ box;
 
 	SMesh@ TerrainMesh = SMesh();
-	SMeshBuffer@ TerrainMeshBuffer = SMeshBuffer();
 	SMaterial@ TerrainMat = SMaterial();
 
 	SMesh@ GrassMesh = SMesh();
-	SMeshBuffer@ GrassMeshBuffer = SMeshBuffer();
 	SMaterial@ GrassMat = SMaterial();
 
 	SMesh@ PalmsMesh = SMesh();
-	SMeshBuffer@ PalmsMeshBuffer = SMeshBuffer();
 	SMaterial@ PalmsMat = SMaterial();
 
 	Vec3f[] Vertex_Positions;
@@ -98,6 +96,7 @@ shared class TerrainChunk
 
 		Vertex[] Palm_Vertices = getPalm_Vertices();
 		u16[] Palm_IDs = getPalm_IDs();
+		const f32 palmScale = 7.5f;
 
 		@box = BoundingBox(Vec3f(StartZ*16, -8*16, StartX*16), Vec3f((StartZ+ChunkSize)*16, 8*16, (StartX+ChunkSize)*16));
 
@@ -106,7 +105,7 @@ shared class TerrainChunk
 
 				int index = (row*(ChunkSizeX+1))+col;
 
-		    	SColor pixel = heightmap.get(StartX+col,StartZ+row);
+		    	SColor pixel = getTerrainPixel(heightmap, StartX+col, StartZ+row);
 		    	float h = getPixelHeight(pixel);
 
 				SColor color = pixel;
@@ -119,10 +118,10 @@ shared class TerrainChunk
 					case sr3d_map_colors::color_station: color = color_white; break;
 				}	    	
 
-		    	SColor pixelcolour_u = heightmap.get( StartX+col  ,StartZ+row-1);
-		    	SColor pixelcolour_l = heightmap.get( StartX+col-1,StartZ+row);
-		    	SColor pixelcolour_d = heightmap.get( StartX+col  ,StartZ+row+1);
-		    	SColor pixelcolour_r = heightmap.get( StartX+col+1,StartZ+row);		    	
+		    	SColor pixelcolour_u = getTerrainPixel(heightmap, StartX+col,   StartZ+row-1);
+		    	SColor pixelcolour_l = getTerrainPixel(heightmap, StartX+col-1, StartZ+row);
+		    	SColor pixelcolour_d = getTerrainPixel(heightmap, StartX+col,   StartZ+row+1);
+		    	SColor pixelcolour_r = getTerrainPixel(heightmap, StartX+col+1, StartZ+row);		    	
 
 		    	SColor pixelcolour_ur = pixelcolour_u.getInterpolated(pixelcolour_r , 0.5);
 		    	SColor pixelcolour_rd = pixelcolour_r.getInterpolated(pixelcolour_d , 0.5);
@@ -154,13 +153,14 @@ shared class TerrainChunk
 					u16 IDstart = combined_grassVerts.length;
 
 					f32 OffPosX = XORRandom(100)*0.01;
+					f32 OffPosY = -0.5;
 					f32 OffPosZ = XORRandom(100)*0.01;
 					u8 Rot = XORRandom(255);
 
 					for (uint i = 0; i < GrassVertices.length; i++)
 					{
 						Vec2f Rotated0 = Vec2f(GrassVertices[i].x,GrassVertices[i].z).RotateBy(Rot);
-						combined_grassVerts.push_back(Vertex((StartX+ OffPosX+pos.x+Rotated0.x)*16, GrassVertices[i].y, (StartZ+ OffPosZ+pos.y+Rotated0.y)*16, GrassVertices[i].u, GrassVertices[i].v ));								
+						combined_grassVerts.push_back(Vertex((StartX + OffPosX + pos.x)*16 + Rotated0.x, h + GrassVertices[i].y+OffPosY, (StartZ + OffPosZ + pos.y)*16 + Rotated0.y, GrassVertices[i].u, GrassVertices[i].v ));								
 					}
 					for (uint i = 0; i < GrassFaceIDs.length; ++i)
 					{
@@ -168,21 +168,20 @@ shared class TerrainChunk
 					}
 					if (combined_grassVerts.length() > 0)
 					{
-						GrassMeshBuffer.SetVertices(combined_grassVerts);
-						GrassMeshBuffer.SetIndices(grass_IDs); 
-						//GrassMesh.BuildMesh();
-						GrassMeshBuffer.SetDirty(Driver::VERTEX_INDEX);
+						GrassMesh.SetVertex(combined_grassVerts);
+						GrassMesh.SetIndices(grass_IDs); 
+						GrassMesh.BuildMesh();
+						GrassMesh.SetDirty(SMesh::VERTEX_INDEX);
 
-						GrassMat.SetTexture("GrassTexture.png", 0);
+						GrassMat.AddTexture("GrassTexture.png", 0);
 						GrassMat.DisableAllFlags();
 						GrassMat.SetFlag(SMaterial::COLOR_MASK, true);
 						GrassMat.SetFlag(SMaterial::ZBUFFER, true);
 						GrassMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
 						GrassMat.SetFlag(SMaterial::BACK_FACE_CULLING, false);
-						//GrassMat.SetMaterialType(SMaterial::TRANSPARENT_ALPHA_CHANNEL_REF );
+						GrassMat.SetMaterialType(SMaterial::TRANSPARENT_ALPHA_CHANNEL_REF );
 						//GrassMat.SetFlag(SMaterial::WIREFRAME, true);
-						GrassMeshBuffer.SetMaterial(GrassMat);
-						GrassMesh.AddMeshBuffer( GrassMeshBuffer );
+						GrassMesh.SetMaterial(GrassMat);
 					}
 				}
 				else if (pixel == sr3d_map_colors::color_palmtree)
@@ -190,15 +189,22 @@ shared class TerrainChunk
 					Vec2f pos(col,row);
 					u16 IDstart = combined_palmVerts.length;
 
-					f32 OffPosX = XORRandom(100)*0.01;
-					f32 OffPosZ = XORRandom(100)*0.01;
-					u8 Rot = XORRandom(255);
-
+					const u32 palmTileOffset = u32((StartZ + row) * map.tilemapwidth + StartX + col);
+					u32 palmSeed = palmTileOffset * 2 + 1;
+					palmSeed = palmSeed * 1664525 + 1013904223;
+					f32 OffPosX = float(palmSeed % 100) * 0.01f;
+					palmSeed = palmTileOffset * 2 + 2;
+					palmSeed = palmSeed * 1664525 + 1013904223;
+					f32 OffPosZ = float(palmSeed % 100) * 0.01f;
+					palmSeed = palmTileOffset * 2 + 3;
+					palmSeed = palmSeed * 1664525 + 1013904223;
+					u8 Rot = u8(float(palmSeed % 100) * 0.01f * 255.0f);
+					Vec3f palmWorldPosition((StartX + OffPosX + pos.x) * 16, h, (StartZ + OffPosZ + pos.y) * 16);
 
 					for (uint i = 0; i < Palm_Vertices.length; i++)
 					{
-						Vec2f Rotated0 = Vec2f(Palm_Vertices[i].x,Palm_Vertices[i].z).RotateBy(Rot);
-						combined_palmVerts.push_back(Vertex(StartZ+ OffPosX+pos.y+Rotated0.x, Palm_Vertices[i].y,StartX+ OffPosZ+pos.x+Rotated0.y, Palm_Vertices[i].u, Palm_Vertices[i].v ));								
+						Vec2f Rotated0 = Vec2f(Palm_Vertices[i].x * palmScale, Palm_Vertices[i].z * palmScale).RotateBy(Rot);
+						combined_palmVerts.push_back(Vertex(palmWorldPosition.x + Rotated0.x, palmWorldPosition.y + Palm_Vertices[i].y * palmScale, palmWorldPosition.z + Rotated0.y, Palm_Vertices[i].u, Palm_Vertices[i].v ));								
 					}
 					for (uint i = 0; i < Palm_IDs.length; ++i)
 					{
@@ -206,21 +212,20 @@ shared class TerrainChunk
 					}
 					if (combined_palmVerts.length() > 0)
 					{
-						PalmsMeshBuffer.SetVertices(combined_palmVerts);
-						PalmsMeshBuffer.SetIndices(combined_palmIDs); 
-						//PalmsMesh.BuildMesh();
-						PalmsMeshBuffer.SetDirty(Driver::VERTEX_INDEX);
+						PalmsMesh.SetVertex(combined_palmVerts);
+						PalmsMesh.SetIndices(combined_palmIDs); 
+						PalmsMesh.BuildMesh();
+						PalmsMesh.SetDirty(SMesh::VERTEX_INDEX);
 
-						PalmsMat.SetTexture("PalmTexture.png", 0);
+						PalmsMat.AddTexture("PalmTexture.png", 0);
 						PalmsMat.DisableAllFlags();
 						PalmsMat.SetFlag(SMaterial::COLOR_MASK, true);
 						PalmsMat.SetFlag(SMaterial::ZBUFFER, true);
 						PalmsMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
 						PalmsMat.SetFlag(SMaterial::BACK_FACE_CULLING, false);
-						//PalmsMat.SetMaterialType(SMaterial::TRANSPARENT_ALPHA_CHANNEL_REF );
+						PalmsMat.SetMaterialType(SMaterial::TRANSPARENT_ALPHA_CHANNEL_REF );
 						//PalmsMat.SetFlag(SMaterial::WIREFRAME, true);
-						PalmsMeshBuffer.SetMaterial(PalmsMat);
-						PalmsMesh.AddMeshBuffer( PalmsMeshBuffer );
+						PalmsMesh.SetMaterial(PalmsMat);
 					}
 				}
 		    } 
@@ -250,12 +255,12 @@ shared class TerrainChunk
 				//else
 				{
 					ground_IDs[t] =   tl;
-					ground_IDs[t+1] = tr;
-		            ground_IDs[t+2] = bl;
+					ground_IDs[t+1] = bl;
+		            ground_IDs[t+2] = tr;
 
 		            ground_IDs[t+3] = bl;
-		            ground_IDs[t+4] = tr;
-		            ground_IDs[t+5] = br;		            
+		            ground_IDs[t+4] = br;
+		            ground_IDs[t+5] = tr;		            
 				}	
 				t+=6;
 			}
@@ -263,12 +268,12 @@ shared class TerrainChunk
 
 		if (ground_Vertices.length() > 0)
 		{
-			TerrainMeshBuffer.SetVertices(ground_Vertices);
-			TerrainMeshBuffer.SetIndices(ground_IDs); 
-			//TerrainMesh.BuildMesh();
-			TerrainMeshBuffer.SetDirty(Driver::VERTEX_INDEX);
+			TerrainMesh.SetVertex(ground_Vertices);
+			TerrainMesh.SetIndices(ground_IDs); 
+			TerrainMesh.BuildMesh();
+			TerrainMesh.SetDirty(SMesh::VERTEX_INDEX);
 
-			TerrainMat.SetTexture("SandTexture.png", 0);
+			TerrainMat.AddTexture("SandTexture.png", 0);
 			TerrainMat.DisableAllFlags();
 			TerrainMat.SetFlag(SMaterial::COLOR_MASK, true);
 			TerrainMat.SetFlag(SMaterial::ZBUFFER, true);
@@ -277,14 +282,90 @@ shared class TerrainChunk
 			TerrainMat.SetFlag(SMaterial::GOURAUD_SHADING, true);
 			TerrainMat.SetFlag(SMaterial::FOG_ENABLE, true);
 			//TerrainMat.SetFlag(SMaterial::WIREFRAME, true);
-			TerrainMeshBuffer.SetMaterial(TerrainMat);
-			TerrainMesh.AddMeshBuffer( TerrainMeshBuffer );
+			TerrainMesh.SetMaterial(TerrainMat);
 		}
 
 		if(ground_Vertices.size() == 0)
         {
             empty = true;
         }
+	}
+
+	SColor getHeightmapPixel( ImageData@ heightmap, int x, int y )
+	{
+		if (heightmap is null || x < 0 || y < 0 || x >= int(heightmap.width()) || y >= int(heightmap.height()))
+		{
+			return sr3d_map_colors::color_water;
+		}
+
+		return heightmap.get(x, y);
+	}
+
+	SColor getTerrainPixel( ImageData@ heightmap, int x, int y )
+	{
+		SColor pixel = getHeightmapPixel(heightmap, x, y);
+		if (isTerrainMarkerColor(pixel))
+		{
+			return getInferredHeightmapTerrainPixel(heightmap, x, y);
+		}
+
+		return pixel;
+	}
+
+	SColor getInferredHeightmapTerrainPixel( ImageData@ heightmap, int x, int y )
+	{
+		f32 waterWeight = 0.0f;
+		f32 waterDepthTotal = 0.0f;
+		f32 shoalWeight = 0.0f;
+		f32 sandWeight = 0.0f;
+		f32 grassWeight = 0.0f;
+		f32 rockWeight = 0.0f;
+
+		for (int radius = 1; radius <= 3; radius++)
+		{
+			const f32 weight = radius == 1 ? 4.0f : (radius == 2 ? 2.0f : 1.0f);
+
+			for (int sy = -radius; sy <= radius; sy++)
+			{
+				for (int sx = -radius; sx <= radius; sx++)
+				{
+					if (sx == 0 && sy == 0)
+						continue;
+
+					if (Maths::Abs(sx) != radius && Maths::Abs(sy) != radius)
+						continue;
+
+					SColor sample = getBaseTerrainColor(getHeightmapPixel(heightmap, x + sx, y + sy));
+					if (isTerrainMarkerColor(sample))
+						continue;
+
+					const int waterDepth = getTerrainWaterDepth(sample);
+					if (waterDepth > 0)
+					{
+						waterWeight += weight;
+						waterDepthTotal += waterDepth * weight;
+						if (sample.color == sr3d_map_colors::color_shoal)
+						{
+							shoalWeight += weight;
+						}
+					}
+					else if (sample.color == sr3d_map_colors::color_sand)
+					{
+						sandWeight += weight;
+					}
+					else if (sample.color == sr3d_map_colors::color_grass)
+					{
+						grassWeight += weight;
+					}
+					else if (sample.color == sr3d_map_colors::color_rock)
+					{
+						rockWeight += weight;
+					}
+				}
+			}
+		}
+
+		return chooseInferredTerrainColor(waterWeight, waterDepthTotal, shoalWeight, sandWeight, grassWeight, rockWeight);
 	}
 
 
@@ -297,6 +378,8 @@ shared class TerrainChunk
 			case sr3d_map_colors::color_sand:
 			case sr3d_map_colors::color_rock:     return 1.2;
 			case sr3d_map_colors::color_station:  return 1.0;
+			case sr3d_map_colors::color_main_spawn: return depthAmp*23;
+			case sr3d_map_colors::color_shoal:    return depthAmp*1;
 			case sr3d_map_colors::color_water_1:  return depthAmp*1;
 			case sr3d_map_colors::color_water_2:  return depthAmp*2;
 			case sr3d_map_colors::color_water_3:  return depthAmp*3;
@@ -324,17 +407,17 @@ shared class TerrainChunk
 		return depthAmp*24; //color = SColor(255,255,0,255); 
     }
 
-    bool getFaceRotation(int x, int y, ImageData heightmap) // this needs to be re-done
+    bool getFaceRotation(int x, int y, ImageData@ heightmap) // this needs to be re-done
 	{ 
-		SColor p_C =  heightmap.get(x, y);
-		SColor p_E =  heightmap.get(x+1, y  );
-		SColor p_NE = heightmap.get(x+1, y-1);
-		SColor p_N =  heightmap.get(x  , y-1);
-		SColor p_NW = heightmap.get(x-1, y-1);
-		SColor p_W =  heightmap.get(x-1, y  );
-		SColor p_SW = heightmap.get(x-1, y+1);
-		SColor p_S =  heightmap.get(x  , y+1);
-		SColor p_SE = heightmap.get(x+1, y+1);
+		SColor p_C =  getTerrainPixel(heightmap, x,   y);
+		SColor p_E =  getTerrainPixel(heightmap, x+1, y);
+		SColor p_NE = getTerrainPixel(heightmap, x+1, y-1);
+		SColor p_N =  getTerrainPixel(heightmap, x,   y-1);
+		SColor p_NW = getTerrainPixel(heightmap, x-1, y-1);
+		SColor p_W =  getTerrainPixel(heightmap, x-1, y);
+		SColor p_SW = getTerrainPixel(heightmap, x-1, y+1);
+		SColor p_S =  getTerrainPixel(heightmap, x,   y+1);
+		SColor p_SE = getTerrainPixel(heightmap, x+1, y+1);
 
 		bool rotated = false;			
 
@@ -468,13 +551,6 @@ shared class TerrainChunk
 		return rotated;
 	}
 
-	Vec3f Cross(Vec3f vec1, Vec3f vec2)
-    {
-        return Vec3f(vec1.y * vec2.z - vec2.y * vec1.z,
-                   -(vec1.x * vec2.z - vec2.x * vec1.z),
-                     vec1.x * vec2.y - vec2.x * vec1.y);
-    }
-
 	float[] calcNormals(Vertex[] ground_Vertices, int width, int height) 
 	{
 	    Vec3f v0; Vec3f v1; Vec3f v2; Vec3f v3; Vec3f v4;
@@ -514,27 +590,28 @@ shared class TerrainChunk
 	                v4.z = ground_Vertices[i4 + 2].x;
 	                v4 = v4.opSub(v0);
 
-	                v12 = Cross(v1,v2);
-	                v12.normalize();
+	                v12 = v1.CrossProd(v2);
+	                v12.Normalize();
 
-	                v23 = Cross(v2,v3);
-	                v23.normalize();
+	                v23 = v2.CrossProd(v3);
+	                v23.Normalize();
 
-	                v34 = Cross(v3,v4);
-	                v34.normalize();
+	                v34 = v3.CrossProd(v4);
+	                v34.Normalize();
 
-	                v41 = Cross(v4,v1);
-	                v41.normalize();
+	                v41 = v4.CrossProd(v1);
+	                v41.Normalize();
 
 	                normal = v12.opAdd(v23).opAdd(v34).opAdd(v41);
-	                normal.normalize();
+	                normal.Normalize();
 	            } else {
 	                normal.x = 0;
 	                normal.y = 1;
 	                normal.z = 0;
 	            }
+	            normal.Normalize();
 
-	            normals.push_back(normal.normalize());
+	            normals.push_back(normal.Length());
 
 	            //for (uint n = 0; n < normals.length; n++)
 	            //{

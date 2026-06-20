@@ -2,6 +2,8 @@
 #include "IslandsCommon.as";
 #include "AccurateSoundPlay.as"
 #include "TileCommon.as"
+#include "Particle3D.as"
+#include "OceanWave.as"
 
 const u8 CHECK_FREQUENCY =  30;//30 = 1 second
 const u32 FISH_RADIUS = 65.0f;//pickup radius
@@ -41,6 +43,11 @@ void onTick( CBlob@ this )
 	CMap@ map = getMap();
 	Vec2f pos = this.getPosition();
 	u16 ammount = this.get_u16( "ammount" );
+	if (getNet().isClient() && ammount > 0 && (getGameTime() + this.getNetworkID()) % 42 == 0)
+	{
+		Vec2f rayPos = pos + Vec2f(XORRandom(13) - 6, XORRandom(13) - 6);
+		EmitTreasureRayParticles3D(Vec3f(rayPos.x, GetOceanWaterHeight(Vec3f(rayPos.x, 0.0f, rayPos.y)) + 0.5f, rayPos.y), Maths::Clamp(float(ammount) / float(getRules().get_u16("booty_x_max")), 0.45f, 1.25f));
+	}
 	
 	if ( ammount == 0 )
 	{

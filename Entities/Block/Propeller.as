@@ -1,11 +1,14 @@
 #include "IslandsCommon.as"
 #include "BlockCommon.as"
-#include "WaterEffects.as"
 #include "PropellerForceCommon.as"
 #include "AccurateSoundPlay.as"
 #include "TileCommon.as"
+#include "Particle3D.as"
+#include "OceanWave.as"
+#include "PropellerWake3D.as"
 
 Random _r(133701); //global clientside random object
+const string PROPELLER_BLADES_CHILD = "propeller_blades";
 
 void onInit( CBlob@ this )
 {
@@ -33,6 +36,8 @@ void onInit( CBlob@ this )
 
     sprite.SetEmitSound("PropellerMotor");
     sprite.SetEmitSoundPaused(true);
+
+
 }
 
 void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
@@ -61,9 +66,6 @@ bool isOn(CBlob@ this)
 
 void onTick( CBlob@ this )
 {
-	if (this.getShape().getVars().customData <= 0)
-		return;
-	
 	u32 gameTime = getGameTime();
 	CSprite@ sprite = this.getSprite();
 	f32 power = this.get_f32("power");
@@ -76,8 +78,18 @@ void onTick( CBlob@ this )
 	if ( propeller !is null )
 		propeller.animation.time = on ? 1 : 0;
 
+	UpdatePropellerBlades3D(this, power, on);
+
 	if ( getNet().isServer() )
 		this.Sync("power", true);
+
+	if (getNet().isClient() && on)
+	{
+		EmitPropellerWakeParticles3D(this, power, gameTime, v_fastrender ? 12 : 3);
+	}
+
+	if (this.getShape().getVars().customData <= 0)
+		return;
 
 	if ( stalled )
 	{
@@ -106,7 +118,7 @@ void onTick( CBlob@ this )
 			Vec2f moveNorm;
 			float angleVel;
 			
-			PropellerForces(this, island, power, moveVel, moveNorm, angleVel);
+			//PropellerForces(this, island, power, moveVel, moveNorm, angleVel);
 			
 			const f32 mass = island.mass + island.carryMass;
 			moveVel /= mass;
@@ -148,11 +160,9 @@ void onTick( CBlob@ this )
 			// effects
 			if ( getNet().isClient() )
 			{
-				u8 tickStep = v_fastrender ? 20 : 4;
-				if ( ( gameTime + this.getNetworkID() ) % tickStep == 0 && Maths::Abs(power) >= 1 && !isTouchingLand(pos) )
+				if ((gameTime + this.getNetworkID()) % 24 == 0 && this.getHealth() < this.getInitialHealth() * 0.45f)
 				{
-					Vec2f rpos = Vec2f(_r.NextFloat() * -4 + 4, _r.NextFloat() * -4 + 4);
-					MakeWaterParticle(pos + moveNorm * -6 + rpos, moveNorm * (-0.8f + _r.NextFloat() * -0.3f));
+					EmitFireplaceSmokeParticles3D(Vec3f(pos.x, 9.0f, pos.y), 0.65f);
 				}
 				
 				// limit sounds		
@@ -203,16 +213,34 @@ void onHitBlob( CBlob@ this, Vec2f worldPoint, Vec2f velocity, f32 damage, CBlob
 		directionalSoundPlay( "propellerHit.ogg", worldPoint );		
 }
 
-Random _smokerandom(0x15125); //clientside
 void smoke( Vec2f pos )
 {
-	CParticle@ p = ParticleAnimated( "SmallSmoke1.png",
-											  pos, Vec2f_zero,
-											  _smokerandom.NextFloat() * 360.0f, //angle
-											  1.0f, //scale
-											  3+_smokerandom.NextRanged(2), //animtime
-											  0.0f, //gravity
-											  true ); //selflit
-	if(p !is null)
-		p.Z = 110.0f;
+	EmitFireplaceSmokeParticles3D(Vec3f(pos.x, 9.0f, pos.y), 0.8f);
+}
+
+void UpdatePropellerBlades3D(CBlob@ this, f32 power, bool on)
+{
+	if (!getNet().isClient())
+		return;
+
+	Blob3D@ propeller;
+	if (!this.get("blob3d", @propeller) || propeller is null)
+		return;
+
+	Blob3D@ blades = propeller.getChild(PROPELLER_BLADES_CHILD);
+	if (blades is null)
+		return;
+
+	Vec3f rotation = blades.getLocalMayaRotation();
+	f32 angle = rotation.z;
+	if (on)
+	{
+		angle += 15.0f * Maths::Ceil(power);
+		while (angle < 0.0f)
+			angle += 360.0f;
+		while (angle >= 360.0f)
+			angle -= 360.0f;
+	}
+
+	blades.setLocalMayaRotation(Vec3f(rotation.x, 0.0f, angle));
 }

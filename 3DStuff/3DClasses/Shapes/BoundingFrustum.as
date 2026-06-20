@@ -11,7 +11,7 @@ shared class BoundingFrustum : BoundingShape
     Plane right;
     Plane near;
     Plane top;
-    Vec3f[] corners;
+    Vec3f@[] corners;
 
     int CornerCount = 8;
 
@@ -165,7 +165,7 @@ shared class BoundingFrustum : BoundingShape
 
     void Contains(BoundingSphere sphere, ContainmentType &out result)
     {
-        double dist = bottom.Normal.opMul(sphere.transform.Position);
+        double dist = Dot(bottom.Normal, sphere.transform.Position);
 		result = ContainmentType::Contains;
 		
 		dist += bottom.D;
@@ -177,7 +177,7 @@ shared class BoundingFrustum : BoundingShape
 		if (Maths::Abs(dist) < sphere.Radius)
 			result = ContainmentType::Intersects;
 		
-        dist = top.Normal.opMul(sphere.transform.Position);
+        dist = Dot(top.Normal, sphere.transform.Position);
 		dist += top.D;
 		if (dist > sphere.Radius)
 		{
@@ -187,7 +187,7 @@ shared class BoundingFrustum : BoundingShape
 		if (Maths::Abs(dist) < sphere.Radius)
 			result = ContainmentType::Intersects;
 		
-        dist = near.Normal.opMul(sphere.transform.Position);
+        dist = Dot(near.Normal, sphere.transform.Position);
 		dist += near.D;
 		if (dist > sphere.Radius)
 		{
@@ -197,7 +197,7 @@ shared class BoundingFrustum : BoundingShape
 		if (Maths::Abs(dist) < sphere.Radius)
 			result = ContainmentType::Intersects;
 		
-        dist = far.Normal.opMul(sphere.transform.Position);
+        dist = Dot(far.Normal, sphere.transform.Position);
 		dist += far.D;
 		if (dist > sphere.Radius)
 		{
@@ -207,7 +207,7 @@ shared class BoundingFrustum : BoundingShape
 		if (Maths::Abs(dist) < sphere.Radius)
 			result = ContainmentType::Intersects;
 		
-        dist = left.Normal.opMul(sphere.transform.Position);
+        dist = Dot(left.Normal, sphere.transform.Position);
 		dist += left.D;
 		if (dist > sphere.Radius)
 		{
@@ -217,7 +217,7 @@ shared class BoundingFrustum : BoundingShape
 		if (Maths::Abs(dist) < sphere.Radius)
 			result = ContainmentType::Intersects;
 
-        dist = right.Normal.opMul(sphere.transform.Position);
+        dist = Dot(right.Normal, sphere.transform.Position);
 		dist += right.D;
 		if (dist > sphere.Radius)
 		{
@@ -298,7 +298,7 @@ shared class BoundingFrustum : BoundingShape
         return (this == other);
     }
 
-    Vec3f[] GetCorners()
+    Vec3f@[] GetCorners()
     {
         return this.corners; //this.corners.Clone();
     }
@@ -430,13 +430,6 @@ shared class BoundingFrustum : BoundingShape
         this.NormalizePlane(this.far);
     }
 
-    Vec3f Cross(Vec3f vec1, Vec3f vec2)
-    {
-        return Vec3f(vec1.y * vec2.z - vec2.y * vec1.z,
-                   -(vec1.x * vec2.z - vec2.x * vec1.z),
-                     vec1.x * vec2.y - vec2.x * vec1.y);
-    }
-
     private Vec3f IntersectionPoint(Plane a, Plane b, Plane c)
     {
         // Formula used
@@ -447,7 +440,7 @@ shared class BoundingFrustum : BoundingShape
         // Note: N refers to the normal, d refers to the displacement. '.' means dot product. '*' means cross product
 
         Vec3f v1, v2, v3;
-        double f = -a.Normal.opMul(Cross(b.Normal, c.Normal));
+        double f = -Dot(a.Normal, Cross(b.Normal, c.Normal));
 
         v1 = Cross(b.Normal, c.Normal)*a.D;
         v2 = Cross(c.Normal, a.Normal)*b.D;
@@ -459,7 +452,7 @@ shared class BoundingFrustum : BoundingShape
     
     private void NormalizePlane(Plane p)
     {
-        double factor = 1.0f / p.Normal.length();
+        double factor = 1.0f / p.Normal.Length();
         p.Normal.x *= factor;
         p.Normal.y *= factor;
         p.Normal.z *= factor;

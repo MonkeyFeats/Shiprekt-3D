@@ -384,7 +384,7 @@ void onTick( CBlob@ this )
 						if ( prop !is null && seatColor == prop.getShape().getVars().customData &&  ( teamInsensitive || occupierTeam == prop.getTeamNum() ) )
 						{
 							prop.set_u32( "onTime", gameTime );
-							prop.set_f32("power", left ? power * prop.get_f32("powerFactor") : reverse_power * prop.get_f32("powerFactor"));
+							prop.set_f32("power", right ? power * prop.get_f32("powerFactor") : reverse_power * prop.get_f32("powerFactor"));
 						}
 					}
 					for (uint i = 0; i < right_propellers.length; ++i)
@@ -393,7 +393,7 @@ void onTick( CBlob@ this )
 						if ( prop !is null && seatColor == prop.getShape().getVars().customData && ( teamInsensitive || occupierTeam == prop.getTeamNum() ) )
 						{
 							prop.set_u32( "onTime", gameTime );
-							prop.set_f32("power", right ? power * prop.get_f32("powerFactor") : reverse_power * prop.get_f32("powerFactor"));
+							prop.set_f32("power", left ? power * prop.get_f32("powerFactor") : reverse_power * prop.get_f32("powerFactor"));
 						}
 					}
 				} else
@@ -406,7 +406,7 @@ void onTick( CBlob@ this )
 						if ( prop !is null && seatColor == prop.getShape().getVars().customData && ( teamInsensitive || occupierTeam == prop.getTeamNum() ) )
 						{
 							prop.set_u32( "onTime", gameTime );
-							prop.set_f32("power", left ? oDrive * power * prop.get_f32("powerFactor") : reverse_power * prop.get_f32("powerFactor"));
+							prop.set_f32("power", right ? oDrive * power * prop.get_f32("powerFactor") : reverse_power * prop.get_f32("powerFactor"));
 						}
 					}
 					for (uint i = 0; i < strafe_right_propellers.length; ++i)
@@ -416,7 +416,7 @@ void onTick( CBlob@ this )
 						if ( prop !is null && seatColor == prop.getShape().getVars().customData && ( teamInsensitive || occupierTeam == prop.getTeamNum() ) )
 						{
 							prop.set_u32( "onTime", gameTime );
-							prop.set_f32("power", right ? oDrive * power * prop.get_f32("powerFactor") : reverse_power * prop.get_f32("powerFactor"));
+							prop.set_f32("power", left ? oDrive * power * prop.get_f32("powerFactor") : reverse_power * prop.get_f32("powerFactor"));
 						}
 					}
 				}

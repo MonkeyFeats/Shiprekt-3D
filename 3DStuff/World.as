@@ -1,3 +1,4 @@
+#include "Vec3f.as";
 #include "TerrainGen.as";
 
 const float ChunkSize = 48.0f;
@@ -22,7 +23,6 @@ shared class World
 	Vertex[] edgewall_Vertices;
 	u16[] edgewall_IDs;	
 	SMesh@ EdgeWallMesh = SMesh();
-	SMeshBuffer@ EdgeWallMeshBuffer = SMeshBuffer();
 	SMaterial@ EdgeWallMat = SMaterial();
 
 	World()
@@ -49,22 +49,20 @@ shared class World
 
 		edgewall_IDs = Square_IDs();
 
-		EdgeWallMeshBuffer.SetVertices(edgewall_Vertices);
-		EdgeWallMeshBuffer.SetIndices(edgewall_IDs); 
-		EdgeWallMeshBuffer.RecalculateBoundingBox();
-		EdgeWallMeshBuffer.SetDirty(Driver::VERTEX_INDEX);
+		EdgeWallMesh.SetVertex(edgewall_Vertices);
+		EdgeWallMesh.SetIndices(edgewall_IDs); 
+		EdgeWallMesh.BuildMesh();
+		EdgeWallMesh.SetDirty(SMesh::VERTEX_INDEX);
 
-		EdgeWallMesh.AddMeshBuffer( EdgeWallMeshBuffer );
-
-		EdgeWallMat.SetTexture("NoGoZone.png", 0);
+		EdgeWallMat.AddTexture("NoGoZone.png", 0);
 		EdgeWallMat.DisableAllFlags();
 		EdgeWallMat.SetFlag(SMaterial::COLOR_MASK, true);
 		EdgeWallMat.SetFlag(SMaterial::ZBUFFER, true);
 		EdgeWallMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
 		EdgeWallMat.SetFlag(SMaterial::BACK_FACE_CULLING, true);
 		EdgeWallMat.SetFlag(SMaterial::GOURAUD_SHADING, true);
-    	//EdgeWallMat.SetMaterialType(SMaterial::TRANSPARENT_ALPHA_CHANNEL );
-		EdgeWallMeshBuffer.SetMaterial(EdgeWallMat);
+    	EdgeWallMat.SetMaterialType(SMaterial::TRANSPARENT_ALPHA_CHANNEL );
+		EdgeWallMesh.SetMaterial(EdgeWallMat);
 	}
 
     TerrainChunk@ getChunk(int x, int y, int z)
@@ -79,6 +77,7 @@ shared class World
     {
         if(!inWorldBounds(pos.x, pos.z)) return null;
     	pos.x = int(pos.x/ChunkSize); pos.z = int(pos.z/ChunkSize);
+        if(!inChunkBounds(pos.x, pos.z)) return null;
     	
         int index = pos.z * chunksWidth + pos.x;
 
@@ -89,7 +88,7 @@ shared class World
 
     bool inWorldBounds(int x, int z)
     {
-        if(x<0 || z<0 || x>=mapWidth || z>=mapDepth) return false;
+        if(x<0 || z<0 || x>=map.tilemapwidth || z>=map.tilemapheight) return false;
         return true;
     }
     
@@ -120,15 +119,15 @@ shared class World
 
 	void Render()
 	{
-		EdgeWallMesh.DrawWithMaterial(); 
+		EdgeWallMesh.RenderMeshWithMaterial();
 		for(uint i = 0; i < Chunks.size(); i++)
 		{
 			TerrainChunk@ chunk = Chunks[i];
 			
 			//if (!chunk.visible) continue; 
-			chunk.TerrainMesh.DrawWithMaterial(); 
-			chunk.GrassMesh.DrawWithMaterial();
-			chunk.PalmsMesh.DrawWithMaterial();
+			chunk.TerrainMesh.RenderMeshWithMaterial(); 
+			chunk.GrassMesh.RenderMeshWithMaterial();
+			chunk.PalmsMesh.RenderMeshWithMaterial();
 
 			//chunk.TriMesh.RenderMeshWithMaterial();
 		}

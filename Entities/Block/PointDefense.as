@@ -1,6 +1,7 @@
 #include "BlockCommon.as"
 #include "IslandsCommon.as"
 #include "AccurateSoundPlay.as"
+#include "Particle3D.as"
 
 const f32 PROJECTILE_SPEED = 9.0f;
 const f32 PROJECTILE_SPREAD = 2.25;
@@ -278,7 +279,7 @@ void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
 			}
 			
 			Rotate( this, aimVector ); 
-			shotParticles(pos + aimVector*9, aimVector.Angle());
+			shotParticles(this, pos + aimVector*9, aimVector.Angle());
 			directionalSoundPlay( "Laser1.ogg", pos, 1.0f );
 			
 			Vec2f barrelPos = pos + Vec2f(1,0).RotateBy(aimVector.Angle())*8;
@@ -335,20 +336,9 @@ f32 getDamage( CBlob@ hitBlob )
 }
 
 Random _shotrandom(0x15125); //clientside
-void shotParticles(Vec2f pos, float angle)
+void shotParticles(CBlob@ this, Vec2f pos, float angle)
 {
-	//muzzle flash
-	{
-		CParticle@ p = ParticleAnimated( "Entities/Block/turret_muzzle_flash.png",
-												  pos, Vec2f(),
-												  -angle, //angle
-												  1.0f, //scale
-												  3, //animtime
-												  0.0f, //gravity
-												  true ); //selflit
-		if(p !is null)
-			p.Z = 10.0f;
-	}
+	EmitMuzzleParticles3D(this, pos, angle, 0.75f);
 }
 
 void hitEffects( CBlob@ hitBlob, Vec2f worldPoint )

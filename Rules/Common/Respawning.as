@@ -1,6 +1,7 @@
 #define SERVER_ONLY
 #include "IslandsCommon.as"
 #include "Blob3D.as"
+#include "BoundingCapsule.as"
 
 const string PLAYER_BLOB = "human";
 const string SPAWN_TAG = "mothership";
@@ -232,15 +233,17 @@ CBlob@ SpawnPlayer( CRules@ this, CPlayer@ player )
 		CBlob@ newBlob = server_CreateBlobNoInit( PLAYER_BLOB );
 		if ( newBlob !is null )
 		{
-			//BoundingShape@ shape = BoundingBox( Vec3f(-3.3, 0.0, -3.3), Vec3f(3.3, 18.0, 3.3), Vec3f(ship.getPosition().x, 0, ship.getPosition().y));
-			BoundingShape@ shape = BoundingSphere( 8.0f );
-			Blob3D blob3d(newBlob, player,Vec3f(ship.getPosition().x, 16, ship.getPosition().y), 6, 2.0f, @shape);
+			BoundingShape@ shape = BoundingCapsule(3.3f, 20.0f, Vec3f(ship.getPosition().x, 0, ship.getPosition().y));
+			//BoundingShape@ shape = BoundingSphere( 8.0f );
+			RigidBody@ rigidBody = RigidBody( );
+			Blob3D blob3d(newBlob, player,Vec3f(ship.getPosition().x, 16, ship.getPosition().y), 6, 2.0f, @shape, @rigidBody);
 			if ( blob3d !is null )
 			{
-				//blob3d.shape.ownerBlob = blob3d;
-				blob3d.shape.SetStatic(false);
 				blob3d.shape.setPosition(Vec3f(ship.getPosition().x, 16, ship.getPosition().y));
-
+				blob3d.rb.UseGravity = true;
+				blob3d.rb.GravityScale = 1.0f;
+				blob3d.rb.Init(@blob3d);
+				blob3d.shape.Init(@blob3d);
 				newBlob.set("blob3d", @blob3d);
 			}
 			newBlob.server_SetPlayer( player );
@@ -248,6 +251,7 @@ CBlob@ SpawnPlayer( CRules@ this, CPlayer@ player )
 			newBlob.setPosition( ship.getPosition() );
 			newBlob.Init();
 		}
+
 		
         return newBlob;        
     }

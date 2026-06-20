@@ -9,25 +9,16 @@ shared class BoundingBox : BoundingShape
     bool inside = false;
 
     SMesh@ BoxMesh = SMesh();
-    SMeshBuffer@ BoxMeshBuffer = SMeshBuffer();
     SMaterial@ BoxMat = SMaterial();
 
     BoundingBox() {}
-
-    void setPosition(Vec3f &in pos) override {model.setTranslation(pos);}
-    Vec3f getPosition() override {return model.getTranslation();}
-
-    void setDirection(Vec3f &in dir) override {model.setRotationDegrees(dir); }
-    float getAngleDegrees() override {return model.getRotationDegrees().x;}
-    Vec3f getDirection() override {return model.getRotationDegrees();}
 
     BoundingBox(Vec3f min, Vec3f max)
     {
         //super();
         this.Min = min;
         this.Max = max;
-        UpdateAttributes(SColor(150, 10, 10, 10));
-        model.makeIdentity(); 
+        UpdateAttributes(SColor(150, 0, 255, 0));
     }
 
     BoundingBox(Vec3f min, Vec3f max, Vec3f Pos)
@@ -36,14 +27,7 @@ shared class BoundingBox : BoundingShape
         this.Min = min;
         this.Max = max;
         this.transform.Position = Pos;
-        UpdateAttributes(SColor(150, 10, 120, 10));
-
-        f32[] test = {1,0,0,0,
-                      0,1,0,0,
-                      0,0,1,0,
-                      0,0,0,1};
-
-        model.makeIdentity(); 
+        UpdateAttributes(SColor(150, 0, 255, 0));
     }
 
     void UpdateAttributes(SColor col) override
@@ -67,103 +51,143 @@ shared class BoundingBox : BoundingShape
                             2,6,3,6,7,3,
                             4,0,7,0,3,7};
 
-        BoxMeshBuffer.SetVertices(_Verts);
-        BoxMeshBuffer.SetIndices(_IDs); 
-        //BoxMeshBuffer.BuildMesh();
-        BoxMeshBuffer.SetDirty(Driver::VERTEX_INDEX);
+        BoxMesh.SetVertex(_Verts);
+        BoxMesh.SetIndices(_IDs); 
+        BoxMesh.BuildMesh();
+        BoxMesh.SetDirty(SMesh::VERTEX_INDEX);
 
         BoxMat.DisableAllFlags();
         BoxMat.SetFlag(SMaterial::COLOR_MASK, true);
         BoxMat.SetFlag(SMaterial::ZBUFFER, true);
-        BoxMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
+        BoxMat.SetFlag(SMaterial::ZWRITE_ENABLE, false);
         BoxMat.SetFlag(SMaterial::BACK_FACE_CULLING, false);
-        //BoxMat.SetMaterialType(SMaterial::TRANSPARENT_VERTEX_ALPHA );
-        BoxMat.Thickness = 3.0f;
+        BoxMat.SetMaterialType(SMaterial::TRANSPARENT_VERTEX_ALPHA );
         BoxMat.SetFlag(SMaterial::WIREFRAME, true);
         //BoxMat.SetFlag(SMaterial::LIGHTING, true);
         //BoxMat.SetEmissiveColor(SColor(255,255,0,180));
-        BoxMeshBuffer.SetMaterial(BoxMat);          
-        BoxMesh.AddMeshBuffer( BoxMeshBuffer );      
+        BoxMesh.SetMaterial(BoxMat);        
     }
 
     void Render() override
     { 
-       f32[] marray; model.getArray(marray);
-       Render::SetModelTransform(marray);
-       BoxMesh.DrawWithMaterial();
+       // MatrixR temp_mat = MatrixR();
+       model.SetTranslation(this.getPosition());
+       model.setRotationDegrees(-this.transform.Orientation.x,-this.transform.Orientation.y,-this.transform.Orientation.z);
+       //Matrix::SetRotationDegrees(model.Array, 0 , this.Angle.x , 0);
+
+       Render::SetModelTransform(model.Array);
+       BoxMesh.RenderMeshWithMaterial();
     }
 
-    ContainmentType Contains(BoundingBox@ box, Vec3f Vel, Vec3f &out MTV) override //AABB
+//        void Render() override
+//        {
+//            MatrixR model = this.transform.Matrix;
+//
+//            Render::SetModelTransform(model.Array);
+//            BoxMesh.RenderMeshWithMaterial();
+//        }
+
+    ContainmentType Contains(BoundingBox@ box, Vec3f Vel, Vec3f &out MTV) override
     {
+        return ContainsOrientedBox(box, Vec3f(), Vel, MTV);
+    }
+
+    ContainmentType Contains(BoundingBox@ box, Vec3f Pos, Vec3f Vel, Vec3f &out MTV) override
+    {
+        return ContainsOrientedBox(box, Pos, Vel, MTV);
+    }
+
+    ContainmentType ContainsOrientedBox(BoundingBox@ box, Vec3f Pos, Vec3f Vel, Vec3f &out MTV)
+    {
+        const f32 contactTolerance = 0.000001f;
+        const f32 slop = 0.00001f;
+
+        Vec3f aCenterLocal = (Min + Max) * 0.5f;
+        Vec3f bCenterLocal = (box.Min + box.Max) * 0.5f;
+        Vec3f aHalf = (Max - Min) * 0.5f;
+        Vec3f bHalf = (box.Max - box.Min) * 0.5f;
+
+        Vec3f aAxisX = Vec3f(1, 0, 0);
+        Vec3f aAxisZ = Vec3f(0, 0, 1);
+        Vec3f bAxisX = Vec3f(1, 0, 0);
+        Vec3f bAxisZ = Vec3f(0, 0, 1);
+        aAxisX.rotateXZBy(transform.Orientation.x);
+        aAxisZ.rotateXZBy(transform.Orientation.x);
+        bAxisX.rotateXZBy(box.transform.Orientation.x);
+        bAxisZ.rotateXZBy(box.transform.Orientation.x);
+
+        aCenterLocal.rotateXZBy(transform.Orientation.x);
+        bCenterLocal.rotateXZBy(box.transform.Orientation.x);
+        Vec3f aCenter = transform.Position + Pos + Vel + aCenterLocal;
+        Vec3f bCenter = box.transform.Position + bCenterLocal;
+
+        Vec3f mtv = Vec3f();
         f32 mtvDistance = 9999999.9f;
-        Vec3f mtvAxis = Vec3f();
-        Vec3f b1p = this.getPosition();
-        Vec3f b2p = box.getPosition();
 
-        Vec3f VelPos = ((Vel+b1p));
-        Vec3f min =  (b1p+Min);
-        Vec3f max =  (b1p+Max);
-        Vec3f omin = (b2p+box.Min);
-        Vec3f omax = (b2p+box.Max);
+        f32 nextMtvDistance;
+        Vec3f nextMtv;
+        if (!TestOrientedAxis(Vec3f(0, 1, 0), aCenter, bCenter, aAxisX, aAxisZ, bAxisX, bAxisZ, aHalf, bHalf, contactTolerance, slop, mtvDistance, mtv, nextMtvDistance, nextMtv)) return ContainmentType::None;
+        mtvDistance = nextMtvDistance;
+        mtv = nextMtv;
+        if (!TestOrientedAxis(aAxisX, aCenter, bCenter, aAxisX, aAxisZ, bAxisX, bAxisZ, aHalf, bHalf, contactTolerance, slop, mtvDistance, mtv, nextMtvDistance, nextMtv)) return ContainmentType::None;
+        mtvDistance = nextMtvDistance;
+        mtv = nextMtv;
+        if (!TestOrientedAxis(aAxisZ, aCenter, bCenter, aAxisX, aAxisZ, bAxisX, bAxisZ, aHalf, bHalf, contactTolerance, slop, mtvDistance, mtv, nextMtvDistance, nextMtv)) return ContainmentType::None;
+        mtvDistance = nextMtvDistance;
+        mtv = nextMtv;
+        if (!TestOrientedAxis(bAxisX, aCenter, bCenter, aAxisX, aAxisZ, bAxisX, bAxisZ, aHalf, bHalf, contactTolerance, slop, mtvDistance, mtv, nextMtvDistance, nextMtv)) return ContainmentType::None;
+        mtvDistance = nextMtvDistance;
+        mtv = nextMtv;
+        if (!TestOrientedAxis(bAxisZ, aCenter, bCenter, aAxisX, aAxisZ, bAxisX, bAxisZ, aHalf, bHalf, contactTolerance, slop, mtvDistance, mtv, nextMtvDistance, nextMtv)) return ContainmentType::None;
+        mtvDistance = nextMtvDistance;
+        mtv = nextMtv;
 
-        if ( min.x > omax.x || max.x < omin.x ) {return ContainmentType::None;}
-        if ( min.z > omax.z || max.z < omin.z ) {return ContainmentType::None;}
-        if ( min.y > omax.y || max.y < omin.y ) {return ContainmentType::None;}
-
-        // Seperating Axis Theorum, find the smallest overlapped axis normal and return it multiplied by the overlap
-        //xAxis
+        if (mtv.LengthSquared() <= contactTolerance)
         {
-            Vec3f axis(1,0,0);
-            f32 d0x = (omax.x - min.x);   // 'Left' side
-            f32 d1x = (max.x - omin.x);   // 'Right' side
-            f32 overlap = (d0x < d1x) ? d0x : -d1x; //signed
-            Vec3f sep = (axis * overlap); //
-            f32 sepLengthSquared = sep.lengthSquared();   
-         
-            if (sepLengthSquared < mtvDistance)
-            {
-                mtvDistance = sepLengthSquared;
-                mtvAxis = sep;
-            }            
+            MTV = Vec3f();
+            return ContainmentType::None;
         }
-        //yAxis
-        {            
-            Vec3f axis(0,1,0);
-            f32 d0y = (omax.y - min.y);   // 'Left' side
-            f32 d1y = (max.y - omin.y);   // 'Right' side
-            f32 overlap = (d0y < d1y) ? d0y : -d1y;
-            Vec3f sep = (axis * overlap);
-            f32 sepLengthSquared = sep.lengthSquared();            
-            if (sepLengthSquared < mtvDistance)
-            {
-                mtvDistance = sepLengthSquared;
-                mtvAxis = sep;
-            }
-        }
-        //zAxis
-        {
-            Vec3f axis(0,0,1);
-            f32 d0z = (omax.z - min.z);   // 'Left' side
-            f32 d1z = (max.z - omin.z);   // 'Right' side            
-            f32 overlap = (d0z < d1z) ? d0z : -d1z;
-            Vec3f sep = (axis * overlap);
-            f32 sepLengthSquared = sep.lengthSquared();            
-            if (sepLengthSquared < mtvDistance)
-            {
-                mtvDistance = sepLengthSquared;
-                mtvAxis = sep;
-            }
-        }
-        mtvAxis.normalize();
-        mtvDistance = Maths::Sqrt(mtvDistance) * 1.001f;
-        MTV = mtvAxis*mtvDistance;
+
+        MTV = mtv;
         return ContainmentType::Intersects;
+    }
+
+    bool TestOrientedAxis(Vec3f axis, Vec3f aCenter, Vec3f bCenter, Vec3f aAxisX, Vec3f aAxisZ, Vec3f bAxisX, Vec3f bAxisZ, Vec3f aHalf, Vec3f bHalf, const f32 contactTolerance, const f32 slop, const f32 mtvDistanceIn, Vec3f mtvIn, f32 &out mtvDistanceOut, Vec3f &out mtvOut)
+    {
+        mtvDistanceOut = mtvDistanceIn;
+        mtvOut = mtvIn;
+
+        if (axis.LengthSquared() <= contactTolerance)
+        {
+            return true;
+        }
+
+        axis = axis.Normalize();
+        const f32 aRadius = Maths::Abs(axis.Dot(aAxisX)) * aHalf.x + Maths::Abs(axis.y) * aHalf.y + Maths::Abs(axis.Dot(aAxisZ)) * aHalf.z;
+        const f32 bRadius = Maths::Abs(axis.Dot(bAxisX)) * bHalf.x + Maths::Abs(axis.y) * bHalf.y + Maths::Abs(axis.Dot(bAxisZ)) * bHalf.z;
+        const f32 distance = (bCenter - aCenter).Dot(axis);
+        const f32 overlap = aRadius + bRadius - Maths::Abs(distance);
+
+        if (overlap <= contactTolerance)
+        {
+            return false;
+        }
+
+        Vec3f candidate = axis * ((distance >= 0.0f) ? -Maths::Max(0.0f, overlap - slop) : Maths::Max(0.0f, overlap - slop));
+        const f32 candidateDistance = candidate.LengthSquared();
+        if (candidateDistance < mtvDistanceIn)
+        {
+            mtvDistanceOut = candidateDistance;
+            mtvOut = candidate;
+        }
+
+        return true;
     }
 
     bool TestAxis(Vec3f axis, f32 minA, f32 maxA, f32 minB, f32 maxB, string axe, f32 mtvDistance_in, f32 &out mtvDistance_out, Vec3f &out mtvAxis)
     {
         mtvDistance_out = mtvDistance_in;
-        f32 axisLengthSquared = axis.lengthSquared();
+        f32 axisLengthSquared = axis.LengthSquared();
 
         f32 d0 = (maxB - minA);   // 'Left' side
         f32 d1 = (maxA - minB);   // 'Right' side
@@ -175,7 +199,7 @@ shared class BoundingBox : BoundingShape
 
         f32 overlap = (d0 < d1) ? d0 : -d1;
         Vec3f sep = (axis * (overlap / axisLengthSquared));
-        f32 sepLengthSquared = sep.lengthSquared();
+        f32 sepLengthSquared = sep.LengthSquared();
         
         if (sepLengthSquared < mtvDistance_in)
         {
@@ -188,6 +212,7 @@ shared class BoundingBox : BoundingShape
         return true;
     }
 
+
    // void Contains(BoundingBox box, ContainmentType &out result)
    // {
    //     result = Contains(box);
@@ -199,7 +224,7 @@ shared class BoundingBox : BoundingShape
         //Because question is not frustum contain box but reverse and this is not the same
         int i;
         ContainmentType contained;
-        Vec3f[] corners = frustum.corners;
+        Vec3f@[] corners = frustum.corners;
 
         // First we check if frustum is in box
         for (i = 0; i < corners.size(); i++)
@@ -283,17 +308,17 @@ shared class BoundingBox : BoundingShape
             result = ContainmentType::Contains;
     }
 
-    BoundingBox CreateFromPoints(Vec3f[] points)
+    BoundingBox CreateFromPoints(Vec3f@[] points)
     {
         //if (points.size() == 0) {warn("No Points! ~ BoundingBox.as ~ CreateFromPoints(Vec3f points)");}
         bool empty = true;
-        Vec3f vector2 = Vec3f(MathsHelper::MaxValue32,MathsHelper::MaxValue32,MathsHelper::MaxValue32);
-        Vec3f vector1 = Vec3f(MathsHelper::MinValue32,MathsHelper::MinValue32,MathsHelper::MinValue32);
+        Vec3f vector2 = Vec3f(MathsHelper::MaxValue32);
+        Vec3f vector1 = Vec3f(MathsHelper::MinValue32);
         for( int i = 0; i < points.size(); i++)
         {
             Vec3f vector3;
-            vector2.min(vector3);
-            vector1.max(vector3);
+            vector2.Min(vector3);
+            vector1.Max(vector3);
             empty = false;
         }
 
@@ -302,13 +327,13 @@ shared class BoundingBox : BoundingShape
 
     BoundingBox CreateFromSphere(BoundingSphere sphere)
     {
-        Vec3f vector1 = Vec3f(sphere.Radius,sphere.Radius,sphere.Radius);
+        Vec3f vector1 = Vec3f(sphere.Radius);
         return BoundingBox(sphere.transform.Position - vector1, sphere.transform.Position + vector1);
     }
 
     BoundingBox CreateMerged(BoundingBox original, BoundingBox additional)
     {
-        return BoundingBox( original.Min.min(additional.Min), original.Max.max(additional.Max));
+        return BoundingBox( original.Min.Min(additional.Min), original.Max.Max(additional.Max));
     }
 
     bool Equals(BoundingBox other)
@@ -316,9 +341,9 @@ shared class BoundingBox : BoundingShape
         return (this.Min == other.Min) && (this.Max == other.Max);
     }
 
-    Vec3f[] GetCorners()
+    Vec3f@[] GetCorners()
     {
-         Vec3f[] boxcorners = {
+         Vec3f@[] boxcorners = {
             Vec3f(this.Min.x, this.Max.y, this.Max.z), 
             Vec3f(this.Max.x, this.Max.y, this.Max.z),
             Vec3f(this.Max.x, this.Min.y, this.Max.z), 
@@ -407,14 +432,14 @@ shared class BoundingBox : BoundingShape
             negativeVertex.z = Max.z;
         }
 
-        float distance = plane.Normal.opMul(negativeVertex) + plane.D;
+        float distance = plane.Normal.Dot(negativeVertex) + plane.D;
         if (distance > 0)
         {
             result = PlaneIntersectionType::Front;
             return;
         }
 
-        distance = plane.Normal.opMul(positiveVertex) + plane.D;
+        distance = plane.Normal.Dot(positiveVertex) + plane.D;
         if (distance < 0)
         {
             result = PlaneIntersectionType::Back;

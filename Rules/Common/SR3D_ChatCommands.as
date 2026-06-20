@@ -10,6 +10,12 @@ bool onServerProcessChat(CRules@ this, const string& in text_in, string& out tex
 	CBlob@ b = player.getBlob(); if (b is null) return true;
 	//Blob3D@ blob; if (!b.get("blob",@blob)) return true;
 
+	string[]@ tokens = text_in.split(" ");
+	if (tokens.length > 0 && (tokens[0] == "!debug" || tokens[0] == "!collisiondebug" || tokens[0] == "!debugcollisions" || tokens[0] == "!colliders" || tokens[0] == "!fpscamera" || tokens[0] == "!firstpersoncamera"))
+	{
+		return true;
+	}
+
 	int team = b.getTeamNum();
 	Vec2f pos = b.getPosition();
 	{
@@ -34,30 +40,9 @@ bool onServerProcessChat(CRules@ this, const string& in text_in, string& out tex
 
 bool onClientProcessChat(CRules@ this, const string& in text_in, string& out text_out, CPlayer@ player)
 {
-	if (text_in == "!debug" && !getNet().isServer())
+	if (text_in == "!debug")
 	{
-		// print all blobs
-		CBlob@[] all;
-		getBlobs(@all);
-
-		for (u32 i = 0; i < all.length; i++)
-		{
-			CBlob@ blob = all[i];
-			print("[" + blob.getName() + " " + blob.getNetworkID() + "] ");
-
-			if (blob.getShape() !is null)
-			{
-				CBlob@[] overlapping;
-				if (blob.getOverlapping(@overlapping))
-				{
-					for (uint i = 0; i < overlapping.length; i++)
-					{
-						CBlob@ overlap = overlapping[i];
-						print("       " + overlap.getName() + " " + overlap.isLadder());
-					}
-				}
-			}
-		}
+		return true;
 	}
 
 	return true;

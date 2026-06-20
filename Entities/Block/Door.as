@@ -38,11 +38,6 @@ void onInit( CBlob@ this )
 }
 
 
-bool isOpen( CBlob@ this )
-{
-	return !this.getShape().getConsts().collidable;
-}
-
 void setOpen( CBlob@ this, bool open, bool faceLeft = false)
 {
 	CSprite@ sprite = this.getSprite();

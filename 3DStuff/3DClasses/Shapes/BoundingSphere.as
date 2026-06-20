@@ -1,4 +1,5 @@
 ﻿
+#include "Vec3f.as"
 #include "TypeEnums.as"
 #include "BoundingBox.as"
 #include "BoundingFrustum.as"
@@ -14,9 +15,8 @@ shared class BoundingSphere : BoundingShape
     double Radius;
 
     SMesh@ SphereMesh = SMesh();
-    SMeshBuffer@ SphereMeshBuffer = SMeshBuffer();
     SMaterial@ SphereMat = SMaterial();
-    BoundingShape@ hitsphere;    
+    BoundingShape@ hitsphere;
 
     BoundingSphere(){}
 
@@ -26,7 +26,6 @@ shared class BoundingSphere : BoundingShape
         UpdateAttributes(SColor(150, 0, 255, 0));
 
         @hitsphere = BoundingSphere(this.transform.Position, 1.0);
-        model.makeIdentity(); 
     }
 
     BoundingSphere(Vec3f _Position, double _radius)
@@ -34,8 +33,7 @@ shared class BoundingSphere : BoundingShape
         super(_Position);
         this.Radius = _radius;
         UpdateAttributes(SColor(150, 0, 255, 0));
-        model.makeIdentity(); 
-    }    
+    }
 
     void UpdateAttributes(SColor col) override
     {
@@ -49,32 +47,31 @@ shared class BoundingSphere : BoundingShape
 
         u16[] ids = Sphere_IDs();
 
-        SphereMeshBuffer.SetVertices(_Verts);
-        SphereMeshBuffer.SetIndices(ids); 
-        //SphereMesh.BuildMesh();
-        SphereMeshBuffer.SetDirty(Driver::VERTEX_INDEX);
+        SphereMesh.SetVertex(_Verts);
+        SphereMesh.SetIndices(ids); 
+        SphereMesh.BuildMesh();
+        SphereMesh.SetDirty(SMesh::VERTEX_INDEX);
 
         SphereMat.DisableAllFlags();
         SphereMat.SetFlag(SMaterial::COLOR_MASK, true);
         SphereMat.SetFlag(SMaterial::ZBUFFER, true);
-        SphereMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
+        SphereMat.SetFlag(SMaterial::ZWRITE_ENABLE, false);
         SphereMat.SetFlag(SMaterial::BACK_FACE_CULLING, false);
-        //SphereMat.SetMaterialType(SMaterial::TRANSPARENT_VERTEX_ALPHA );
+        SphereMat.SetMaterialType(SMaterial::TRANSPARENT_VERTEX_ALPHA );
         SphereMat.SetFlag(SMaterial::WIREFRAME, true);
         //SphereMat.SetFlag(SMaterial::LIGHTING, true);
         //SphereMat.SetEmissiveColor(SColor(255,255,0,180));
-        SphereMeshBuffer.SetMaterial(SphereMat);
-        SphereMesh.AddMeshBuffer( SphereMeshBuffer );
+        SphereMesh.SetMaterial(SphereMat);
     }
-
-    void setPosition(Vec3f &in pos) override {model.setTranslation(pos);}
-    Vec3f getPosition() override {return model.getTranslation();}
 
     void Render() override
     { 
-        f32[] marray; model.getArray(marray);
-        Render::SetModelTransform(marray);
-        SphereMesh.DrawWithMaterial();  
+        model.SetTranslation(this.getPosition());
+        model.setRotationDegrees(-this.transform.Orientation.x,0,0);
+       //Matrix::SetRotationDegrees(model.Array, 0 , this.Angle.x , 0);
+
+        Render::SetModelTransform(model.Array);
+        SphereMesh.RenderMeshWithMaterial();  
 
         if (hitsphere !is null)
         hitsphere.Render(); 
@@ -102,7 +99,7 @@ shared class BoundingSphere : BoundingShape
 //
 //        //check if all corner is in sphere
 //        bool inside = true;
-//        Vec3f[] corners = box.GetCorners();
+//        Vec3f@[] corners = box.GetCorners();
 //
 //        //for(int i = 0; i < corners.length(); i++)
 //        //{
@@ -165,50 +162,27 @@ shared class BoundingSphere : BoundingShape
 //    }
 
        //Vec3f localPosition = box.transform.TransformByInverse(this.getPosition());
-       //Vec3f localClosestPoint = localPosition.clamp(box.Min, box.Max); // ContactPosition
+       //Vec3f localClosestPoint = localPosition.Clamp(box.Min, box.Max); // ContactPosition
        //Vec3f ContactPosition = box.transform.Transform(localClosestPoint);
        //hitsphere.transform.Position = ContactPosition;
        //Vec3f offset = this.getPosition() - ContactPosition;
 
-
-//  these should be in matrix
-//   Vec3f rotateVect( Vec3f vect, Matrix4 mod ) const
-//   {
-//       f32[] marray; mod.getArray(marray);
-//       Vec3f tmp = vect;
-//       vect.x = tmp.x*mod[0] + tmp.y*mod[4] + tmp.z*mod[8];
-//       vect.y = tmp.x*mod[1] + tmp.y*mod[5] + tmp.z*mod[9];
-//       vect.z = tmp.x*mod[2] + tmp.y*mod[6] + tmp.z*mod[10];
-//       return vect;
-//   }
-//   Vec3f rotateVectInv( Vec3f vect, Matrix4 mod ) const
-//   {
-//       f32[] marray; mod.getArray(marray);
-//       Vec3f tmp = vect;
-//        vect.x = tmp.x*mod[0] + tmp.y*mod[1] + tmp.z*mod[2];
-//        vect.y = tmp.x*mod[4] + tmp.y*mod[5] + tmp.z*mod[6];
-//        vect.z = tmp.x*mod[8] + tmp.y*mod[9] + tmp.z*mod[10];
-//       return vect;
-//   }
-
     ContainmentType Contains(BoundingBox@ box, Vec3f Vel, Vec3f &out MTV) override
     {
-        Vec3f localPosition = this.model.getTranslation()-box.model.getTranslation();
-        localPosition = Vec3f(localPosition.x*box.model[0] + localPosition.y*box.model[1] + localPosition.z*box.model[2],   //inverseRotateVect to matrix rotation
-                              localPosition.x*box.model[4] + localPosition.y*box.model[5] + localPosition.z*box.model[6], 
-                              localPosition.x*box.model[8] + localPosition.y*box.model[9] + localPosition.z*box.model[10]);  
+        //Vec3f localPosition = box.transform.TransformByInverse(this.getPosition());
+        Vec3f localPosition = this.getPosition() - box.getPosition();
+        //un-rotate 
+        localPosition.rotateXZBy( -box.transform.Orientation.x);    
+        Vec3f localClosestPoint = localPosition.Clamp(box.Min, box.Max); 
+        //re-rotate    
+        localClosestPoint.rotateXZBy( box.transform.Orientation.x);
 
-        Vec3f localClosestPoint = localPosition.clamp(box.Min, box.Max); 
-        localClosestPoint = Vec3f(localClosestPoint.x*box.model[0] + localClosestPoint.y*box.model[4] + localClosestPoint.z*box.model[8], //RotateVect to matrix rotation
-                                  localClosestPoint.x*box.model[1] + localClosestPoint.y*box.model[5] + localClosestPoint.z*box.model[9],
-                                  localClosestPoint.x*box.model[2] + localClosestPoint.y*box.model[6] + localClosestPoint.z*box.model[10]); 
+        Vec3f ContactPosition = box.getPosition()+(localClosestPoint);
 
-        Vec3f ContactPosition = box.getPosition()+localClosestPoint;        
-        hitsphere.model.setTranslation(ContactPosition);
+        hitsphere.transform.Position = ContactPosition;
 
         Vec3f offset = this.getPosition() - ContactPosition;
-
-        float offsetLength = offset.lengthSquared();
+        float offsetLength = offset.LengthSquared();
 
         if (offsetLength > (Radius*Radius))
         {
@@ -222,7 +196,7 @@ shared class BoundingSphere : BoundingShape
 
             Vec3f Normal = offset/offsetLength;
             double depth = Radius - offsetLength;
-            Normal.normalize();
+            Normal.Normalize();
             MTV = Normal*depth;
             return ContainmentType::Intersects;
         }
@@ -250,8 +224,7 @@ shared class BoundingSphere : BoundingShape
                 Normal = localClosestPoint.z > 0 ? Vec3f(0,0,-1) : Vec3f(0,0,1); 
                 depth = penetrationDepths.x;
             }
-            Quaternion orientation = QuaternionFromEuler(box.model.getRotationDegrees());
-            Normal = orientation.Transform(Normal);
+            Normal = box.transform.Orientation.Transform(Normal);
             depth += Radius;
             MTV = Normal*depth;
             return ContainmentType::Contains;
@@ -290,7 +263,7 @@ shared class BoundingSphere : BoundingShape
         //check if all corner is in sphere
         bool inside = true;
 
-        Vec3f[] corners = frustum.corners;
+        Vec3f@[] corners = frustum.corners;
 
         for(int i = 0; i < corners.length(); i++)
         {
@@ -317,7 +290,7 @@ shared class BoundingSphere : BoundingShape
 
     ContainmentType Contains(BoundingSphere sphere)
     {
-        double val = (sphere.getPosition()-getPosition()).length();
+        double val = (sphere.getPosition()-getPosition()).Length();
 
         if (val > sphere.Radius + Radius)
             return ContainmentType::None;
@@ -336,7 +309,7 @@ shared class BoundingSphere : BoundingShape
 
     ContainmentType Contains(Vec3f point)
     {
-        double distance = (point-getPosition()).length();
+        double distance = (point-getPosition()).Length();
 
         if (distance > this.Radius)
             return ContainmentType::None;
@@ -384,7 +357,7 @@ shared class BoundingSphere : BoundingShape
 
     PlaneIntersectionType Intersects(Plane plane)
     {
-		double distance = plane.Normal.opMul(this.getPosition()) + plane.D;
+		double distance = plane.Normal.Dot(this.getPosition()) + plane.D;
 		if (distance > this.Radius)
 			return PlaneIntersectionType::Front;
 		if (distance < -this.Radius)
@@ -421,7 +394,7 @@ BoundingSphere CreateFromBoundingBox(BoundingBox@ box)
                            (box.Min.z + box.Max.z) / 2.0f);
 
     // Find the distance between the Position and one of the corners of the box.
-    double radius = (Position-box.Max).length();
+    double radius = (Position-box.Max).Length();
     return BoundingSphere(Position, radius);
 }
 
@@ -437,7 +410,7 @@ BoundingSphere CreateFromPoints(Vec3f[] points)
         warn("CreateFromPoints, needs more points");
     }
 
-    float radius = 0;
+    double radius = 0;
     Vec3f Position = Vec3f();
     // First, we'll find the Position of gravity for the point 'cloud'.
     int num_points = points.size(); // The number of points (there MUST be a better way to get this instead of counting the number of points one by one?)
@@ -454,7 +427,7 @@ BoundingSphere CreateFromPoints(Vec3f[] points)
     for (int i = 0; i < num_points; ++i)
     {
         Vec3f v  = points[i];
-        float distance = (v - Position).length();
+        double distance = (v - Position).Length();
         
         if (distance > radius)
             radius = distance;
@@ -466,7 +439,7 @@ BoundingSphere CreateFromPoints(Vec3f[] points)
 BoundingSphere CreateMerged(BoundingSphere original, BoundingSphere additional)
 {
     Vec3f oPositionToaPosition = (additional.getPosition() - original.getPosition());
-    float distance = oPositionToaPosition.length();
+    double distance = oPositionToaPosition.Length();
     if (distance <= original.Radius + additional.Radius)//intersect
     {
         if (distance <= original.Radius - additional.Radius)//original contain additional

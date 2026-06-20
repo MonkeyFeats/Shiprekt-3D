@@ -2,9 +2,14 @@
 #include "AccurateSoundPlay.as"
 #include "SAT_Shapes.as"
 #include "BlockCommon.as"
+#include "Raycast3D.as"
 
 const f32 rotate_speed = 30.0f;
 const f32 max_build_distance = 32.0f;
+const string PLACEMENT_POINT_READY = "placement point ready";
+const string PLACEMENT_POINT_X = "placement point x";
+const string PLACEMENT_POINT_Y = "placement point y";
+const string PLACEMENT_POINT_Z = "placement point z";
 u16 crewCantPlaceCounter = 0;
 
 void onInit( CBlob@ this )
@@ -13,8 +18,40 @@ void onInit( CBlob@ this )
     this.set("blocks", blocks);
     this.set_f32("blocks_angle", 0.0f);
     this.set_f32("target_angle", 0.0f);
+	SetPlacementPoint(this, V2toV3(this.getPosition(), Raycast3D::GetBuildPlaneY(this)), false, false);
 
     this.addCommandID("place");
+}
+
+bool GetWaveBuildSurfaceHit(CBlob@ builder, Island@ island, Raycast3D::RaycastHit3D &out surfaceHit, bool &out blockedByBlock)
+{
+	blockedByBlock = false;
+	surfaceHit.Clear();
+
+	if (builder is null || island is null)
+	{
+		return false;
+	}
+
+	Raycast3D::Ray3D ray;
+	if (!Raycast3D::GetLocalCameraRay(builder, ray))
+	{
+		return false;
+	}
+
+	const Vec2f islandPos = island.pos;
+	const f32 baseY = GetIslandWaveVisualY(island, Vec2f_zero);
+	Vec3f planePoint(islandPos.x, baseY, islandPos.y);
+	Vec3f planeNormal(-island.waveSlopeX, 1.0f, -island.waveSlopeZ);
+	if (!Raycast3D::RaycastPlane(ray, planePoint, planeNormal, Raycast3D::BUILD_RAY_DISTANCE, surfaceHit))
+	{
+		return false;
+	}
+
+	Raycast3D::RaycastHit3D blockHit;
+	const f32 blockMaxDistance = Maths::Max(0.0f, surfaceHit.distance - 0.05f);
+	blockedByBlock = Raycast3D::RaycastBlockTarget(ray, Raycast3D::BLOCK_RAY_START_EPSILON, blockMaxDistance, builder, blockHit);
+	return true;
 }
 
 void onTick( CBlob@ this )
@@ -33,7 +70,19 @@ void onTick( CBlob@ this )
 			Vec2f islandPos = island.centerBlock.getPosition();
             f32 blocks_angle = this.get_f32("blocks_angle");//next step angle
             f32 target_angle = this.get_f32("target_angle");//final angle (after manual rotation)
-            Vec2f aimPos = this.get_Vec2f("aim_pos");
+            Vec3f placementPoint = GetPlacementPoint(this);
+			bool rayBlocked = false;
+			bool rayHasPlacement = !this.isMyPlayer() && this.get_bool(PLACEMENT_POINT_READY);
+			if (this.isMyPlayer())
+			{
+				Raycast3D::RaycastHit3D placementHit;
+				rayHasPlacement = GetWaveBuildSurfaceHit(this, island, placementHit, rayBlocked);
+				if (rayHasPlacement)
+				{
+					placementPoint = placementHit.point;
+				}
+				SetPlacementPoint(this, placementPoint, true, rayHasPlacement);
+			}
 			
 			CBlob@ refBlob = getIslandBlob( this );
 					
@@ -44,7 +93,7 @@ void onTick( CBlob@ this )
             }
 
 			if ( getNet().isClient() )
-				PositionBlocks( @blocks, pos, aimPos, blocks_angle, island.centerBlock, refBlob );
+				PositionBlocks( @blocks, pos, placementPoint, blocks_angle, island.centerBlock, refBlob );
 
 			CPlayer@ player = this.getPlayer();
             if (player !is null && player.isMyPlayer()) 
@@ -56,20 +105,24 @@ void onTick( CBlob@ this )
 				bool cLinked = false;
                 const bool overlappingIsland = blocksOverlappingIsland( @blocks );
 
-                Vec2f mouseNorm = aimPos - pos;
+                Vec2f mouseNorm = placementPoint.xz() - pos;
 				f32 mouseLen = mouseNorm.Length();
-				mouseNorm /= mouseLen;
+				if (mouseLen > 0.01f)
+				{
+					mouseNorm /= mouseLen;
+				}
 
-				bool toofar = (mouseLen > max_build_distance);
+				bool toofar = (mouseLen > max_build_distance || !rayHasPlacement || rayBlocked);
 
+				//print(""+blocks.length);	
 				for (uint i = 0; i < blocks.length; ++i)
-				{					
-					//if (toofar)
-					//{
-					//	blocks[i].set_bool("red",true);	
-					//	SetDisplay( blocks[i], SColor(255, 255, 0, 0), RenderStyle::additive );
-					//	continue;
-					//}
+				{				
+					if (toofar)
+					{
+						blocks[i].set_bool("red",true);	
+						SetDisplay( blocks[i], SColor(255, 255, 0, 0), RenderStyle::additive );
+						continue;
+					}
 					if ( overlappingIsland )
 					{					
 						blocks[i].set_bool("red",true);	
@@ -104,13 +157,16 @@ void onTick( CBlob@ this )
                 // place
                 if (this.isKeyJustPressed( key_action1 ) && !getHUD().hasMenus() && !getHUD().hasButtons() )
                 {
-                    if (target_angle == blocks_angle && !overlappingIsland && !cLinked) //&& !toofar )
+                	print("Just Placed");
+                    if (target_angle == blocks_angle && !overlappingIsland && !cLinked && rayHasPlacement && !rayBlocked && !toofar)
                     {
                         CBitStream params;
                         params.write_netid( island.centerBlock.getNetworkID() );
                         params.write_netid( refBlob.getNetworkID() );
                         params.write_Vec2f( pos - islandPos );
-                        params.write_Vec2f( aimPos );
+                        params.write_f32( float(placementPoint.x) );
+                        params.write_f32( float(placementPoint.y) );
+                        params.write_f32( float(placementPoint.z) );
                         params.write_f32( target_angle );
                         params.write_f32( island.centerBlock.getAngleDegrees() );
                         this.SendCommand( this.getCommandID("place"), params );
@@ -165,7 +221,32 @@ void onTick( CBlob@ this )
     }
 }
 
-void PositionBlocks( CBlob@[]@ blocks, Vec2f pos, Vec2f aimPos, const f32 blocks_angle, CBlob@ centerBlock, CBlob@ refBlock )
+Vec3f GetPlacementPoint(CBlob@ this)
+{
+	return Vec3f(
+		this.get_f32(PLACEMENT_POINT_X),
+		this.get_f32(PLACEMENT_POINT_Y),
+		this.get_f32(PLACEMENT_POINT_Z)
+	);
+}
+
+void SetPlacementPoint(CBlob@ this, Vec3f point, bool sync, bool ready = true)
+{
+	this.set_bool(PLACEMENT_POINT_READY, ready);
+	this.set_f32(PLACEMENT_POINT_X, float(point.x));
+	this.set_f32(PLACEMENT_POINT_Y, float(point.y));
+	this.set_f32(PLACEMENT_POINT_Z, float(point.z));
+
+	if (sync)
+	{
+		this.Sync(PLACEMENT_POINT_READY, false);
+		this.Sync(PLACEMENT_POINT_X, false);
+		this.Sync(PLACEMENT_POINT_Y, false);
+		this.Sync(PLACEMENT_POINT_Z, false);
+	}
+}
+
+void PositionBlocks( CBlob@[]@ blocks, Vec2f pos, Vec3f placementPoint, const f32 blocks_angle, CBlob@ centerBlock, CBlob@ refBlock )
 {
     if ( centerBlock is null )
 	{
@@ -173,25 +254,14 @@ void PositionBlocks( CBlob@[]@ blocks, Vec2f pos, Vec2f aimPos, const f32 blocks
         return;
     }
 	
-	Vec2f island_pos = centerBlock.getPosition();
     f32 angle = centerBlock.getAngleDegrees();
 	f32 refBAngle = refBlock.getAngleDegrees();//reference block angle
 	//current island angle as point of reference
 	while(refBAngle > angle + 45)	refBAngle -= 90.0f;
 	while(refBAngle < angle - 45)	refBAngle += 90.0f;
-	
-	//get offset (based on the centerblock) of block we're standing on
-	Vec2f refBOffset = refBlock.getPosition() - island_pos;
-	refBOffset.RotateBy( -refBAngle );
-	refBOffset.x = refBOffset.x % 16.0f;
-	refBOffset.y = refBOffset.y % 16.0f;
-	//not really necessary
-	if ( refBOffset.x > 8.0f )	refBOffset.x -= 16.0f;	else if ( refBOffset.x < -8.0f )	refBOffset.x += 16.0f;
-	if ( refBOffset.y > 8.0f )	refBOffset.y -= 16.0f;	else if ( refBOffset.y < -8.0f )	refBOffset.y += 16.0f;
-	refBOffset.RotateBy( refBAngle );		
-	island_pos += refBOffset;
 
-	Vec2f islandAim = aimPos - island_pos;//island to 'buildblock' pointer
+	Vec2f island_pos = refBlock.getPosition();
+	Vec2f islandAim = placementPoint.xz() - island_pos;//island to 'buildblock' pointer
 	islandAim.RotateBy( -refBAngle );		islandAim = SnapToGrid( islandAim );		islandAim.RotateBy( refBAngle );
 	Vec2f cursor_pos = island_pos + islandAim;//position of snapped buildblock
 	
@@ -205,6 +275,19 @@ void PositionBlocks( CBlob@[]@ blocks, Vec2f pos, Vec2f aimPos, const f32 blocks
   
 		block.setPosition( cursor_pos + offset );//align to island grid
 		block.setAngleDegrees( ( refBAngle + blocks_angle ) % 360.0f );//set angle: reference angle + rotation angle
+		Blob3D@ block3d;
+		if (block.get("blob3d", @block3d) && block3d !is null)
+		{
+			Island@ island = getIsland(centerBlock.getShape().getVars().customData);
+			Vec2f islandPos = centerBlock.getPosition();
+			if (island !is null)
+			{
+				islandPos = island.pos;
+			}
+			Vec2f worldOffset = block.getPosition() - islandPos;
+			block3d.renderOffset = Vec3f(0.0f, GetIslandWaveVisualY(island, worldOffset), 0.0f);
+			block3d.renderRotation = GetIslandWaveVisualRotation(island);
+		}
 
 		SetDisplay( block, color_white, RenderStyle::additive, 560.0f );
 		block.set_bool("red",false);
@@ -224,7 +307,10 @@ void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
         }
 
         Vec2f pos_offset = params.read_Vec2f();
-        Vec2f aimPos_offset = params.read_Vec2f();
+		const f32 placementX = params.read_f32();
+		const f32 placementY = params.read_f32();
+		const f32 placementZ = params.read_f32();
+        Vec3f placementPoint = Vec3f(placementX, placementY, placementZ);
         const f32 target_angle = params.read_f32();
         const f32 island_angle = params.read_f32();
 
@@ -250,7 +336,7 @@ void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
         CBlob@[]@ blocks;
         if (this.get( "blocks", @blocks ) && blocks.size() > 0)                 
         {	
-			PositionBlocks( @blocks, islandPos + pos_offset.RotateBy( angleDelta ), aimPos_offset.RotateBy( angleDelta ), target_angle, centerBlock, refBlock );
+			PositionBlocks( @blocks, islandPos + pos_offset.RotateBy( angleDelta ), placementPoint, target_angle, centerBlock, refBlock );
 
 			if ( true )
 			{
@@ -278,7 +364,7 @@ void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
 							island.blocks.push_back(isle_block);							
 
 						const bool solid = Block::isSolid(blockType);
-						SAT_Shape sat_shape(b, Shape, Vec3f(b.getPosition().x,0,b.getPosition().y), false, 0, b.getMass(), solid, iColor);
+						SAT_Shape sat_shape(b, Shape, V2toV3(b.getPosition()), false, 0, b.getMass(), solid, iColor);
 						b.set("SAT_Info", @sat_shape);	
 
 						} else

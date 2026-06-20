@@ -1,6 +1,7 @@
 #include "BlockCommon.as"
 #include "IslandsCommon.as"
 #include "AccurateSoundPlay.as"
+#include "Particle3D.as"
  
 const f32 PROJECTILE_RANGE = 375.0F;
 const f32 PROJECTILE_SPEED = 15.0f;;
@@ -186,7 +187,7 @@ void Fire( CBlob@ this, CBlob@ shooter )
 	if ( layer !is null )
 		layer.animation.SetFrameIndex(0);
 
-	shotParticles(pos + aimVector*9, aimVector.Angle());
+	shotParticles(this, pos + aimVector*9, aimVector.Angle());
 	
 	directionalSoundPlay( "CannonFire.ogg", pos, 7.0f );
 		
@@ -217,40 +218,7 @@ bool isClear( CBlob@ this )
 	return clear;
 }
 
-void shotParticles(Vec2f pos, float angle)
+void shotParticles(CBlob@ this, Vec2f pos, float angle)
 {
-	//muzzle flash
-	{
-		CParticle@ p = ParticleAnimated( "Entities/Block/turret_muzzle_flash.png",
-												  pos, Vec2f(),
-												  -angle, //angle
-												  1.0f, //scale
-												  3, //animtime
-												  0.0f, //gravity
-												  true ); //selflit
-		if(p !is null)
-			p.Z = 10.0f;
-	}
-
-	Vec2f shot_vel = Vec2f(0.5f,0);
-	shot_vel.RotateBy(-angle);
-
-	//smoke
-	for(int i = 0; i < 5; i++)
-	{
-		//random velocity direction
-		Vec2f vel(0.1f + _shotrandom.NextFloat()*0.2f, 0);
-		vel.RotateBy(_shotrandom.NextFloat() * 360.0f);
-		vel += shot_vel * i;
-
-		CParticle@ p = ParticleAnimated( "Entities/Block/turret_smoke.png",
-												  pos, vel,
-												  _shotrandom.NextFloat() * 360.0f, //angle
-												  1.0f, //scale
-												  3+_shotrandom.NextRanged(4), //animtime
-												  0.0f, //gravity
-												  true ); //selflit
-		if(p !is null)
-			p.Z = 550.0f;
-	}
+	EmitMuzzleParticles3D(this, pos, angle, 1.6f);
 }

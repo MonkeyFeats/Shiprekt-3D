@@ -1,4 +1,5 @@
 
+#include "Vec3f.as"
 //#include "BoundingSphere.as"
 //#include "BoundingBox.as"
 #include "TypeEnums.as"
@@ -41,12 +42,12 @@ shared class Matrix4x4
 
     Vec3f Backward
     {
-        get { return Vec3f(this.Array[8], this.Array[9], this.Array[10]); }
+        get { return Vec3f(-this.Array[8], -this.Array[9], -this.Array[10]); }
         set
         {
-            this.Array[8] = value.x;
-            this.Array[9] = value.y;
-            this.Array[10] = value.z;
+            this.Array[8] = -value.x;
+            this.Array[9] = -value.y;
+            this.Array[10] = -value.z;
         }
     }
     
@@ -64,12 +65,12 @@ shared class Matrix4x4
     
     Vec3f Forward
     {
-        get { return Vec3f(-this.Array[8], -this.Array[9], -this.Array[10]); }
+        get { return Vec3f(this.Array[8], this.Array[9], this.Array[10]); }
         set
         {
-            this.Array[8] = -value.x;
-            this.Array[9] = -value.y;
-            this.Array[10] = -value.z;
+            this.Array[8] = value.x;
+            this.Array[9] = value.y;
+            this.Array[10] = value.z;
         }
     }
     
@@ -313,7 +314,7 @@ shared class Matrix4x4
 
     void CreateLookAt(Vec3f cameraPosition, Vec3f cameraTarget, Vec3f cameraUpVector)
     {
-        Vec3f vector = Normalize(cameraPosition - cameraTarget);
+        Vec3f vector = Normalize(cameraTarget - cameraPosition);
 	    Vec3f vector2 = Normalize(Cross(cameraUpVector, vector));
 	    Vec3f vector3 = Cross(vector, vector2);
 	    this.Array[0] = vector2.x;
@@ -540,13 +541,13 @@ shared class Matrix4x4
         this.Array[10] = val1;
     }
 
-    //void rotateVec( Vec3f & vec )
-    //{
-    //    Vec3f tmp = vec;
-    //    vec.x = tmp.x*this.Array[0] + tmp.y*this.Array[4] + tmp.z*this.Array[8];
-    //    vec.y = tmp.x*this.Array[1] + tmp.y*this.Array[5] + tmp.z*this.Array[9];
-    //    vec.z = tmp.x*this.Array[2] + tmp.y*this.Array[6] + tmp.z*this.Array[10];
-    //} 
+    void rotateVec( Vec3f & vec )
+    {
+        Vec3f tmp = vec;
+        vec.x = tmp.x*this.Array[0] + tmp.y*this.Array[4] + tmp.z*this.Array[8];
+        vec.y = tmp.x*this.Array[1] + tmp.y*this.Array[5] + tmp.z*this.Array[9];
+        vec.z = tmp.x*this.Array[2] + tmp.y*this.Array[6] + tmp.z*this.Array[10];
+    } 
 
     void SetTranslation(float xPosition, float yPosition, float zPosition)
     {

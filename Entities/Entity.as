@@ -1,4 +1,5 @@
-
+#include "Vec3f.as";
+ 
 class Entity
 {
     Vec3f Position;

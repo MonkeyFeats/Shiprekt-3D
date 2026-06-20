@@ -1,4 +1,5 @@
 ﻿#include "TypeEnums.as";
+#include "Vec3f.as";
 #include "Vec4f.as";
 #include "BoundingBox.as"
 #include "BoundingSphere.as"
@@ -42,9 +43,9 @@ shared class Plane
         Vec3f ab = b - a;
         Vec3f ac = c - a;
 
-        Vec3f cross = Cross(ab,ac);
-        Normal = cross; cross.normalize();
-        D = -Normal.opMul(a);
+        Vec3f cross = ab.Cross(ac);
+        Normal = cross.Normalize();
+        D = -Normal.Dot(a);
     }
 
     Plane(double a, double b, double c, double d) 
@@ -79,18 +80,11 @@ shared class Plane
     //    throw NotImplementedException();
     //}
 
-    Vec3f Cross(Vec3f vec1, Vec3f vec2)
-    {
-        return Vec3f(vec1.y * vec2.z - vec2.y * vec1.z,
-                   -(vec1.x * vec2.z - vec2.x * vec1.z),
-                     vec1.x * vec2.y - vec2.x * vec1.y);
-    }
-
     void Normalize()
     {
         double factor;
         Vec3f normal = Normal;
-        normal.normalize();
+        Normal = Normal.Normalize();
         factor = Maths::Sqrt(Normal.x * Normal.x + Normal.y * Normal.y + Normal.z * Normal.z) /
                 Maths::Sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
         D = D * factor;
@@ -159,8 +153,7 @@ shared class Plane
 void Normalize(Plane value, Plane &out result)
 {
     double factor;
-    result.Normal = value.Normal;
-    result.Normal.normalize();
+    result.Normal = value.Normal.Normalize();
     factor = Maths::Sqrt(result.Normal.x * result.Normal.x + result.Normal.y * result.Normal.y + result.Normal.z * result.Normal.z) /
             Maths::Sqrt(value.Normal.x * value.Normal.x + value.Normal.y * value.Normal.y + value.Normal.z * value.Normal.z);
     result.D = value.D * factor;

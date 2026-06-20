@@ -40,7 +40,7 @@ class WheelMenuEntry
 	float angle_min, angle_max;
 	Vec2f position;
 	bool hovered;
-	float cost;
+	u16 cost;
 
 	SColor get_color()
 	{
@@ -110,10 +110,12 @@ class WheelMenu
 	WheelMenuEntry@[] entries;
 	WheelMenuEntry@ hovered;
 	string option_notice;
+	bool show_cost;
 
 	WheelMenu()
 	{
 		option_notice = getTranslatedString("Select option");
+		show_cost = true;
 	}
 
 	float angle_step()
@@ -240,11 +242,11 @@ class WheelMenu
 		Vec2f origin = getDriver().getScreenCenterPos();
 
 		string hover_text = (hovered !is null ? hovered.visible_name : getTranslatedString("(return)"));
-		string hover_cost = (hovered !is null ? getTranslatedString("$ ")+hovered.cost : getTranslatedString(""));
-
+		string hover_cost = (show_cost && hovered !is null ? "$ " + hovered.cost : "");
 		Vec2f pane_size(WheelMenu::center_pane_min_width, WheelMenu::center_pane_padding.y * 2.0f);
 		pane_size = extend_pane(pane_size, hover_text);
 		pane_size = extend_pane(pane_size, option_notice);
+		pane_size = extend_pane(pane_size, hover_cost);
 
 		//GUI::DrawFramedPane(origin - pane_size / 2.0f, origin + pane_size / 2.0f);
 

@@ -1,9 +1,4 @@
-
-const int CellSize = 16;
-const float wavelength = 48.0;
-const f32 amplitude = 0.6;
-const f32 pi = Maths::Pi;
-const f32 startDepth = -1.2;
+#include "OceanWave.as"
 
 class OceanWater
 {
@@ -15,212 +10,106 @@ class OceanWater
     u16[] water_IDs;
 
     SMesh@ WaterMesh = SMesh();
-    SMeshBuffer@ WaterMeshBuffer = SMeshBuffer();
-    SMeshBuffer@ WaterMeshBuffer2 = SMeshBuffer();
     SMaterial@ WaterMat = SMaterial();
-    SMaterial@ WaterMat2 = SMaterial();
     //Noise@ noise = Noise();
-
-    f32[] test = {1,0,0,0,
-                  0,1,0,0,
-                  0,0,1,0,
-                  0,0,0,1};
-
-    Matrix4 mat4 = Matrix4();
-
-    //AABBox3d box = AABBox3d();
 
     OceanWater()
     {
-        //mat4.buildTextureTransform(0, Vec2f(0,0), Vec2f(0,0), Vec2f(1,1));
+        WaterMesh.SetHardwareMapping(SMesh::DYNAMIC);
 
         CMap@ map = getMap();
 
-        const int mapWidth = Maths::Round((map.tilemapwidth+CellSize)/CellSize);
-        const int mapHeight = Maths::Round((map.tilemapheight+CellSize)/CellSize);
+        const int mapWidth = Maths::Round((map.tilemapwidth+OCEAN_WAVE_CELL_SIZE)/OCEAN_WAVE_CELL_SIZE);
+        const int mapHeight = Maths::Round((map.tilemapheight+OCEAN_WAVE_CELL_SIZE)/OCEAN_WAVE_CELL_SIZE);
+        const int meshWidth = mapWidth + OCEAN_VISUAL_BORDER_CELLS * 2;
+        const int meshHeight = mapHeight + OCEAN_VISUAL_BORDER_CELLS * 2;
 
-        water_Vertices.set_length((mapWidth+1)*(mapHeight+1));
-        water_IDs.set_length( (mapWidth) * (mapHeight) * 6);
+        water_Vertices.set_length((meshWidth+1)*(meshHeight+1));
+        water_IDs.set_length( (meshWidth) * (meshHeight) * 6);
 
         uint v = 0;
         uint t = 0;
-        for (uint y = 0; y <= mapHeight; y++) {
-            for (uint x = 0; x <= mapWidth; x++) {      
-                water_Vertices[v]= Vertex( y*CellSize*map.tilesize, 0.0, x*CellSize*map.tilesize, x*(CellSize/4), y*(CellSize/4), SColor(100,100,100,100));
+        for (uint y = 0; y <= meshHeight; y++) {
+            const int row = int(y) - OCEAN_VISUAL_BORDER_CELLS;
+            for (uint x = 0; x <= meshWidth; x++) {
+                const int col = int(x) - OCEAN_VISUAL_BORDER_CELLS;
+                water_Vertices[v]= Vertex( row*OCEAN_WAVE_CELL_SIZE*map.tilesize, 0.0, col*OCEAN_WAVE_CELL_SIZE*map.tilesize, col*(OCEAN_WAVE_CELL_SIZE/4), row*(OCEAN_WAVE_CELL_SIZE/4), SColor(230, 50,50,50));
                 v++;
             }   
         }
         v = 0;
-        for (uint y = 0; y < mapHeight; y++) {
-            for (uint x = 0; x < mapWidth; x++) {       
+        for (uint y = 0; y < meshHeight; y++) {
+            for (uint x = 0; x < meshWidth; x++) {
                 water_IDs[t] =   v;
                 water_IDs[t+1] = water_IDs[t+3] = v+1;
-                water_IDs[t+2] = water_IDs[t+4] = v+(mapWidth+1);
-                water_IDs[t+5] = v+(mapWidth+1)+1;      
+                water_IDs[t+2] = water_IDs[t+4] = v+(meshWidth+1);
+                water_IDs[t+5] = v+(meshWidth+1)+1;
                 v++;
                 t+=6;
             }
             v++;
         }   
 
-        WaterMat.SetTexture("Water.png", 0);
-        WaterMat.SetTexture("Detail.png", 1);
+        WaterMat.AddTexture("Water.png", 0);
+        // Normal-map test:
+        // WaterMat.AddTexture("NormalWave.png", 1);
+        // WaterMat.SetMaterialType(SMaterial::NORMAL_MAP_TRANSPARENT_VERTEX_ALPHA);
+        // WaterMat.SetFlag(SMaterial::LIGHTING, true);
         WaterMat.DisableAllFlags();
-        WaterMat.SetFlag(SMaterial::ZBUFFER, true);
-        WaterMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
         WaterMat.SetFlag(SMaterial::COLOR_MASK, true);
-
-        //WaterMat2.SetTexture("NoGoZone.png", 0);
-        //WaterMat2.DisableAllFlags();
-        //WaterMat2.SetFlag(SMaterial::COLOR_MASK, true);
-        //WaterMat2.SetFlag(SMaterial::ZBUFFER, true);
-        //WaterMat2.SetFlag(SMaterial::ZWRITE_ENABLE, true);
-        //WaterMat2.SetFlag(SMaterial::BACK_FACE_CULLING, false);
-        //WaterMat2.MaterialType = SMaterial::TRANSPARENT_VERTEX_ALPHA;
+        WaterMat.SetFlag(SMaterial::ZBUFFER, true);
+        WaterMat.SetFlag(SMaterial::ZWRITE_ENABLE, false);
+        WaterMat.SetFlag(SMaterial::BACK_FACE_CULLING, false);
         //WaterMat.SetFlag(SMaterial::ANTI_ALIASING, true);
+        WaterMat.SetFlag(SMaterial::BILINEAR_FILTER, true);
+        WaterMat.SetLayerBilinearFilter(0, true);
         //WaterMat.SetFlag(SMaterial::ANISOTROPIC_FILTER, true);
         //WaterMat.SetLayerAnisotropicFilter(0, 8);
-
-        //WaterMat.SetFlag(SMaterial::WIREFRAME, true);
-        //WaterMat.SetFlag(SMaterial::POINTCLOUD, true);
+        WaterMat.SetMaterialType(SMaterial::TRANSPARENT_VERTEX_ALPHA);
+       // WaterMat.SetBlendOperation(SMaterial::ADD);
         WaterMat.SetFlag(SMaterial::GOURAUD_SHADING, true);
-        //WaterMat.SetFlag(SMaterial::LIGHTING, true);
-        //WaterMat.SetFlag(SMaterial::ZBUFFER, true);
-        //WaterMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
-        //WaterMat.SetFlag(SMaterial::BACK_FACE_CULLING, true);
-        //WaterMat.SetFlag(SMaterial::FRONT_FACE_CULLIN, true);
-        //WaterMat.SetFlag(SMaterial::BILINEAR_FILTER, true);
-        //WaterMat.SetFlag(SMaterial::TRILINER_FILTER, true);
-        //WaterMat.SetFlag(SMaterial::ANISOTROPIC_FILTER, true);
-        //WaterMat.SetFlag(SMaterial::FOG_ENABLE, true);
-        //WaterMat.SetFlag(SMaterial::NORMALIZE_NORMALS, true);
-        //WaterMat.SetFlag(SMaterial::TEXTURE_WRAP, true);
-        //WaterMat.SetFlag(SMaterial::ANTI_ALIASING, true);
-        //WaterMat.SetFlag(SMaterial::COLOR_MATERIAL, true);
-        //WaterMat.SetFlag(SMaterial::USE_MIP_MAPS, true);
-        //WaterMat.SetFlag(SMaterial::BLEND_OPERATION, true);
-        //WaterMat.SetFlag(SMaterial::POLYGON_OFFSET, true);
-
-        //WaterMat.AmbientColor = SColor(255,120,0,5);
-        //WaterMat.DiffuseColor = SColor(255,255,0,255);
-        //WaterMat.EmissiveColor = SColor(255,0,255,0);
-        //WaterMat.SpecularColor = SColor(255,255,255,0);
-        //WaterMat.Shininess = 0.6;
-        //WaterMat.SetColorMaterial(SMaterial::NONE);
-        //WaterMat.SetColorMask(SMaterial::BLUE);
-
-        //WaterMat.SetTextureMatrix(0, mat4);
-
-        //WaterMat.MaterialTypeParam = 5.0f;
-        //WaterMat.MaterialTypeParam2 = 1.2f;
-
-        WaterMat.MaterialType = SMaterial::TRANSPARENT_VERTEX_ALPHA;
-        //WaterMat2.MaterialType = SMaterial::TRANSPARENT_VERTEX_ALPHA;
-        //WaterMat.SetFlag(SMaterial::GOURAUD_SHADING, true);
-
-        //WaterMat.Thickness = 4.0f;
-        //WaterMat.AmbientColor = SColor(255,255,0,0);
         //WaterMat.SetFlag(SMaterial::WIREFRAME, true);
-        //WaterMat.MaterialTypeParam = 2.0f;
+        WaterMat.SetFlag(SMaterial::FOG_ENABLE, true);
+        WaterMesh.SetMaterial(WaterMat);
 
-        //mat4.SetArray(test);
-        //mat4.buildTextureTransform(1.7, Vec2f(0,1), Vec2f(1,1), Vec2f(10,10));
-
-        //WaterMat.SetPolygonOffsetFactor(255);
-
-        WaterMeshBuffer.SetMaterial(WaterMat);
-
-        WaterMeshBuffer.SetHardwareMappingHint(Driver::DYNAMIC, Driver::VERTEX_INDEX);
-        WaterMeshBuffer.SetVertices(water_Vertices);
-        WaterMeshBuffer.SetIndices(water_IDs); 
-        WaterMeshBuffer.RecalculateBoundingBox();
-        WaterMeshBuffer.SetDirty(Driver::VERTEX_INDEX);
-        WaterMeshBuffer.SetHardwareMappingHint(Driver::DYNAMIC, Driver::VERTEX);
-        WaterMesh.AddMeshBuffer( WaterMeshBuffer );
-
-        //WaterMeshBuffer2.SetMaterial(WaterMat2);
-        //WaterMeshBuffer2.SetHardwareMappingHint(Driver::DYNAMIC, Driver::VERTEX_INDEX);
-        //WaterMeshBuffer2.SetVertices(water_Vertices);
-        //WaterMeshBuffer2.SetIndices(water_IDs); 
-        //WaterMeshBuffer2.SetDirty(Driver::VERTEX_INDEX);
-        //WaterMeshBuffer2.SetHardwareMappingHint(Driver::DYNAMIC, Driver::VERTEX);
-        //WaterMesh.AddMeshBuffer( WaterMeshBuffer2 );
+        WaterMesh.SetVertex(water_Vertices);
+        WaterMesh.SetIndices(water_IDs); 
+        WaterMesh.BuildMesh();
+        WaterMesh.SetDirty(SMesh::VERTEX_INDEX);
     }
+
 
     void Update()
     {
-        float time = getGameTime()/5.0;
-
-         //   
-
-        mat4.setTextureTranslate(time, time);
-
-        if (getGameTime() == 300)
-        {            
-            
-            //WaterMeshBuffer.Drop();
-
-           //WaterMat = WaterMat2;
-
-           //AABBox3d box = WaterMeshBuffer.getBoundingBox();
-            //WaterMeshBuffer.Drop();
-
-           //WaterMat = WaterMat2;
-           //WaterMesh.SetBoundingBox(box);
-           
-          // print("icount "+WaterMesh.getMeshBuffer(0).getVertexCount());
-          // print("icount2 "+WaterMesh.getMeshBuffer(WaterMat).getVertexCount());
-           //print("i3pos "+WaterMeshBuffer.getPosition(0).x);
-            //print("trans "+WaterMat.isTransparent());
-            //WaterMesh.Clear();
-            //WaterMesh.Drop();
+        CMap@ map = getMap();
+        if (map is null)
+        {
+            return;
         }
 
-        //ye = getGameTime()%255;
-        //WaterMat.SetPolygonOffsetFactor(ye);
-       //if (time % 10 == 0)
-       //{
-       //    ye++;
-       //    if (ye == 8) ye = 0;
-       //    switch (ye)
-       //    {
-       //        case 0:  WaterMat.ZBuffer =  SMaterial::NEVER;
-       //        case 1:  WaterMat.ZBuffer =  SMaterial::LESSEQUAL;
-       //        case 2:  WaterMat.ZBuffer =  SMaterial::EQUAL;
-       //        case 3:  WaterMat.ZBuffer =  SMaterial::LESS;
-       //        case 4:  WaterMat.ZBuffer =  SMaterial::NOTEQUAL;
-       //        case 5:  WaterMat.ZBuffer =  SMaterial::GREATEREQUAL;
-       //        case 6:  WaterMat.ZBuffer =  SMaterial::GREATER;
-       //        case 7:  WaterMat.ZBuffer =  SMaterial::ALWAYS;
-       //    }
-       //    
-       //    WaterMeshBuffer.SetMaterial(WaterMat);
-       //    print(""+ye);
-       //}
-
-       if (WaterMesh is null) return;
-
+        const f32 spacing = OCEAN_WAVE_CELL_SIZE * map.tilesize;
+        const int mapWidth = Maths::Round((map.tilemapwidth+OCEAN_WAVE_CELL_SIZE)/OCEAN_WAVE_CELL_SIZE);
+        const int rowStride = mapWidth + 1;
         for (uint i = 0; i < water_Vertices.length; i++)
         {
-            f32 h1 =  (-amplitude*Maths::Sin(pi*2.0f*(i+time)/wavelength))*16;
-            water_Vertices[i].y = (startDepth*16)+h1;
-            water_Vertices[i].col = low.getInterpolated_quadratic(mid,high, h1/amplitude);
+            const int row = Maths::Round(water_Vertices[i].x / spacing);
+            const int col = Maths::Round(water_Vertices[i].z / spacing);
+            f32 h1 = GetOceanWaveDisplacementForVertex(row * rowStride + col);
+
+            water_Vertices[i].y = (OCEAN_START_DEPTH*16)+h1;
+            //water_Vertices[i].col = low.getInterpolated_quadratic(mid,high, h1/OCEAN_WAVE_AMPLITUDE);
         }
 
-        WaterMeshBuffer.SetVertices(water_Vertices);
-        WaterMeshBuffer.SetDirty(Driver::VERTEX);
+        WaterMesh.SetVertex(water_Vertices);
+        WaterMesh.BuildMesh();
+        WaterMesh.SetDirty(SMesh::VERTEX);
     }
 
     void Render()
     {        
-        //Matrix::MakeIdentity(model);
-        //f32[] test; WaterMat.getTextureMatrix(1).getArray(test);  
-        //if (getGameTime() > 300)      
-        //Render::SetModelTransform(test);
-        if (WaterMesh !is null)
-        WaterMesh.DrawWithMaterial(); 
+        Matrix::MakeIdentity(model);
+        Render::SetModelTransform(model);
+        WaterMesh.RenderMeshWithMaterial(); 
     }
     
 }
-
-int ye = 0;

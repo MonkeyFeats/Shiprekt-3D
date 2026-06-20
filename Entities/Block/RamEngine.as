@@ -1,11 +1,14 @@
 #include "IslandsCommon.as"
 #include "BlockCommon.as"
-#include "WaterEffects.as"
 #include "PropellerForceCommon.as"
 #include "AccurateSoundPlay.as"
 #include "TileCommon.as"
+#include "Particle3D.as"
+#include "OceanWave.as"
+#include "PropellerWake3D.as"
 
 Random _r(133701); //global clientside random object
+const string PROPELLER_BLADES_CHILD = "propeller_blades";
 
 void onInit( CBlob@ this )
 {
@@ -69,9 +72,6 @@ bool isOn(CBlob@ this)
 
 void onTick( CBlob@ this )
 {
-	if (this.getShape().getVars().customData <= 0)
-		return;
-	
 	u32 gameTime = getGameTime();
 	CSprite@ sprite = this.getSprite();
 	f32 power = this.get_f32("power");
@@ -97,8 +97,18 @@ void onTick( CBlob@ this )
 	if ( ramEngine !is null )
 		ramEngine.animation.time = on ? 1 : 0;
 
+	UpdatePropellerBlades3D(this, angle);
+
 	if ( getNet().isServer() )
 		this.Sync("power", true);
+
+	if (getNet().isClient() && on)
+	{
+		EmitPropellerWakeParticles3D(this, power, gameTime, v_fastrender ? 14 : 4);
+	}
+
+	if (this.getShape().getVars().customData <= 0)
+		return;
 
 	if ( stalled )
 	{
@@ -169,13 +179,6 @@ void onTick( CBlob@ this )
 			// effects
 			if ( getNet().isClient() )
 			{
-				u8 tickStep = v_fastrender ? 20 : 4;
-				if ( ( gameTime + this.getNetworkID() ) % tickStep == 0 && Maths::Abs(power) >= 1 && !isTouchingLand(pos) )
-				{
-					Vec2f rpos = Vec2f(_r.NextFloat() * -4 + 4, _r.NextFloat() * -4 + 4);
-					MakeWaterParticle(pos + moveNorm * -6 + rpos, moveNorm * (-0.8f + _r.NextFloat() * -0.3f));
-				}
-				
 				// limit sounds		
 				if (island.soundsPlayed == 0 && sprite.getEmitSoundPaused() == true)
 				{
@@ -236,4 +239,21 @@ void smoke( Vec2f pos )
 											  true ); //selflit
 	if(p !is null)
 		p.Z = 110.0f;
+}
+
+void UpdatePropellerBlades3D(CBlob@ this, f32 angle)
+{
+	if (!getNet().isClient())
+		return;
+
+	Blob3D@ propeller;
+	if (!this.get("blob3d", @propeller) || propeller is null)
+		return;
+
+	Blob3D@ blades = propeller.getChild(PROPELLER_BLADES_CHILD);
+	if (blades is null)
+		return;
+
+	Vec3f rotation = blades.getLocalMayaRotation();
+	blades.setLocalMayaRotation(Vec3f(rotation.x, 0.0f, angle));
 }

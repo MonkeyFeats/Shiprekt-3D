@@ -4,6 +4,7 @@
 #include "Booty.as"
 #include "AccurateSoundPlay.as"
 #include "CustomMap.as";
+#include "Particle3D.as"
  
 const f32 BULLET_SPREAD = 2.5f;
 const f32 BULLET_RANGE = 275.0F;
@@ -300,7 +301,7 @@ void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
 		
 		if ( !blocked )
 		{
-			shotParticles( barrelPos, aimVector.Angle() );
+			shotParticles( this, barrelPos, aimVector.Angle() );
 			directionalSoundPlay( "Gunshot" + ( XORRandom(2) + 2 ) + ".ogg", barrelPos );
 			if (this.get_string("barrel") == "left")
 				layer.SetAnimation( "fire left" );
@@ -407,20 +408,9 @@ void hitEffects( CBlob@ hitBlob, Vec2f worldPoint )
 	}
 }
  
-void shotParticles(Vec2f pos, float angle )
+void shotParticles(CBlob@ this, Vec2f pos, float angle )
 {
-	//muzzle flash
-	CParticle@ p = ParticleAnimated( "Entities/Block/turret_muzzle_flash.png",
-																					  pos, Vec2f(),
-																					  -angle, //angle
-																					  1.0f, //scale
-																					  3, //animtime
-																					  0.0f, //gravity
-																					  true ); //selflit
-	if(p !is null)
-	{
-		p.Z = 10.0f;
-	}
+	EmitMuzzleParticles3D(this, pos, angle, 0.75f);
 }
 
 Random _sprk_r;

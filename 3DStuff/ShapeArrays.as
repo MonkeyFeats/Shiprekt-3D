@@ -14,11 +14,11 @@ const Vertex[] WakePlane_Vertices = {
 };
 
 shared const Vertex[] getGrassVertices() { const Vertex[] a = {
-	Vertex( 0, 0, 10.2,  -0.25, 1 ),
-	Vertex( 0, 10.2, 0,  -0.185, 0.875 ),
-	Vertex( 0, 0, -10.2,  -0.125, 1 ),
-	Vertex( -10.2, 0, 0,  -0.25, 1 ),
-	Vertex( 10.2, 0, 0,  -0.125, 1 )
+	Vertex( 0, 0, 10.2,  0.0, 1.0 ),
+	Vertex( 0, 10.2, 0,  0.5, 0.0 ),
+	Vertex( 0, 0, -10.2,  1.0, 1.0 ),
+	Vertex( -10.2, 0, 0,  0.0, 1.0 ),
+	Vertex( 10.2, 0, 0,  1.0, 1.0 )
 	}; return a;
 };
 shared u16[] getGrassIDs() { const u16[] a = {2,1,0,4,1,3}; return a; }

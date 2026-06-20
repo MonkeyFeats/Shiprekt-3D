@@ -3,6 +3,8 @@
 #include "IslandsCommon.as";
 #include "MakeBlock.as"
 #include "BlockCommon.as"
+#include "Camera3D.as"
+#include "CollisionDebug.as"
 
 const u16 STATION_BOOTY = 4;
 
@@ -165,6 +167,80 @@ bool onServerProcessChat( CRules@ this, const string& in text_in, string& out te
 {
 	if (player is null )
 		return true;
+
+	if ( player.isMod() && text_in.substr(0, 1) == "!" )
+	{
+		string[]@ tokens = text_in.split(" ");
+		if (tokens.length > 0 && (tokens[0] == "!fpscamera" || tokens[0] == "!firstpersoncamera"))
+		{
+			bool enabled = IsFirstPersonCameraEnabled(this);
+			if (tokens.length > 1)
+			{
+				const string mode = tokens[1];
+				if (mode == "on" || mode == "true" || mode == "1")
+				{
+					enabled = true;
+				}
+				else if (mode == "off" || mode == "false" || mode == "0")
+				{
+					enabled = false;
+				}
+				else if (mode == "toggle")
+				{
+					enabled = !enabled;
+				}
+				else
+				{
+					client_AddToChat("Usage: !fpscamera [on|off|toggle]", SColor(255, 255, 200, 0));
+					return false;
+				}
+			}
+			else
+			{
+				enabled = !enabled;
+			}
+
+			this.set_bool(FIRST_PERSON_CAMERA_ENABLED, enabled);
+			this.Sync(FIRST_PERSON_CAMERA_ENABLED, true);
+			client_AddToChat("First-person camera " + (enabled ? "enabled" : "disabled") + ".");
+			return false;
+		}
+
+		if (tokens.length > 0 && (tokens[0] == "!debug" || tokens[0] == "!collisiondebug" || tokens[0] == "!debugcollisions" || tokens[0] == "!colliders"))
+		{
+			bool enabled = IsCollisionDebugEnabled(this);
+			if (tokens.length > 1)
+			{
+				const string mode = tokens[1];
+				if (mode == "on" || mode == "true" || mode == "1")
+				{
+					enabled = true;
+				}
+				else if (mode == "off" || mode == "false" || mode == "0")
+				{
+					enabled = false;
+				}
+				else if (mode == "toggle")
+				{
+					enabled = !enabled;
+				}
+				else
+				{
+					client_AddToChat("Usage: !debug [on|off|toggle]", SColor(255, 255, 200, 0));
+					return false;
+				}
+			}
+			else
+			{
+				enabled = !enabled;
+			}
+
+			this.set_bool(COLLISION_DEBUG_ENABLED, enabled);
+			this.Sync(COLLISION_DEBUG_ENABLED, true);
+			client_AddToChat("Debug " + (enabled ? "enabled" : "disabled") + ".");
+			return false;
+		}
+	}
 
 	CBlob@ b = player.getBlob(); 
 	if (b !is null)

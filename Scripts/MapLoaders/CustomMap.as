@@ -1,8 +1,8 @@
 
 #include "SR3DLoaderColors.as";
 #include "World.as";
-#include "LoadMapUtils.as";
 #include "CustomBlocks.as";
+#include "LoadMapUtils.as";
 #include "BlockCommon.as";
 #include "Booty.as";
 
@@ -67,42 +67,102 @@ class PNGLoader
 		World world;
 		map.set("terrainInfo", @world);
 	} 
+
+	SColor getImageTerrainPixel( Vec2f pixelPos )
+	{
+		if ( image is null || !image.isLoaded() )
+		{
+			return sr3d_map_colors::color_water;
+		}
+
+		image.setPixelPosition(pixelPos);
+		if (!image.canRead())
+		{
+			return sr3d_map_colors::color_water;
+		}
+
+		return image.readPixel();
+	}
+
+	SColor getResolvedTerrainPixel( Vec2f pixelPos )
+	{
+		SColor pixel = getImageTerrainPixel(pixelPos);
+		if (isTerrainMarkerColor(pixel))
+		{
+			return getInferredTerrainPixel(pixelPos);
+		}
+
+		return getBaseTerrainColor(pixel);
+	}
+
+	SColor getInferredTerrainPixel( Vec2f pixelPos )
+	{
+		f32 waterWeight = 0.0f;
+		f32 waterDepthTotal = 0.0f;
+		f32 shoalWeight = 0.0f;
+		f32 sandWeight = 0.0f;
+		f32 grassWeight = 0.0f;
+		f32 rockWeight = 0.0f;
+
+		for (int radius = 1; radius <= 3; radius++)
+		{
+			const f32 weight = radius == 1 ? 4.0f : (radius == 2 ? 2.0f : 1.0f);
+
+			for (int y = -radius; y <= radius; y++)
+			{
+				for (int x = -radius; x <= radius; x++)
+				{
+					if (x == 0 && y == 0)
+						continue;
+
+					if (Maths::Abs(x) != radius && Maths::Abs(y) != radius)
+						continue;
+
+					SColor sample = getBaseTerrainColor(getImageTerrainPixel(pixelPos + Vec2f(x, y)));
+					if (isTerrainMarkerColor(sample))
+						continue;
+
+					const int waterDepth = getTerrainWaterDepth(sample);
+					if (waterDepth > 0)
+					{
+						waterWeight += weight;
+						waterDepthTotal += waterDepth * weight;
+						if (sample.color == sr3d_map_colors::color_shoal)
+						{
+							shoalWeight += weight;
+						}
+					}
+					else if (sample.color == sr3d_map_colors::color_sand)
+					{
+						sandWeight += weight;
+					}
+					else if (sample.color == sr3d_map_colors::color_grass)
+					{
+						grassWeight += weight;
+					}
+					else if (sample.color == sr3d_map_colors::color_rock)
+					{
+						rockWeight += weight;
+					}
+				}
+			}
+		}
+
+		return chooseInferredTerrainColor(waterWeight, waterDepthTotal, shoalWeight, sandWeight, grassWeight, rockWeight);
+	}
 	
 	void handlePixelAutoLoader( SColor pixel, int offset, Vec2f pixelPos)
 	{	
 		if ( image !is null && image.isLoaded() )
 		{
-			image.setPixelPosition( pixelPos + Vec2f(1, 0) );
-			if (image.canRead())
-				pixel_R = image.readPixel();
-			
-			image.setPixelPosition( pixelPos + Vec2f(1, -1) );
-			if (image.canRead())
-				pixel_RU = image.readPixel();
-			
-			image.setPixelPosition( pixelPos + Vec2f(0, -1) );
-			if (image.canRead())
-				pixel_U = image.readPixel();
-			
-			image.setPixelPosition( pixelPos + Vec2f(-1, -1) );
-			if (image.canRead())
-				pixel_LU = image.readPixel();
-			
-			image.setPixelPosition( pixelPos + Vec2f(-1, 0) );
-			if (image.canRead())
-				pixel_L = image.readPixel();
-			
-			image.setPixelPosition( pixelPos + Vec2f(-1, 1) );
-			if (image.canRead())
-				pixel_LD = image.readPixel();
-			
-			image.setPixelPosition( pixelPos + Vec2f(0, 1) );
-			if (image.canRead())
-				pixel_D = image.readPixel();
-			
-			image.setPixelPosition( pixelPos + Vec2f(1, 1) );
-			if (image.canRead())
-				pixel_RD = image.readPixel();
+			pixel_R  = getResolvedTerrainPixel( pixelPos + Vec2f( 1,  0) );
+			pixel_RU = getResolvedTerrainPixel( pixelPos + Vec2f( 1, -1) );
+			pixel_U  = getResolvedTerrainPixel( pixelPos + Vec2f( 0, -1) );
+			pixel_LU = getResolvedTerrainPixel( pixelPos + Vec2f(-1, -1) );
+			pixel_L  = getResolvedTerrainPixel( pixelPos + Vec2f(-1,  0) );
+			pixel_LD = getResolvedTerrainPixel( pixelPos + Vec2f(-1,  1) );
+			pixel_D  = getResolvedTerrainPixel( pixelPos + Vec2f( 0,  1) );
+			pixel_RD = getResolvedTerrainPixel( pixelPos + Vec2f( 1,  1) );
 				
 			image.setPixelOffset(offset);
 		}
@@ -113,7 +173,11 @@ class PNGLoader
 			case sr3d_map_colors::color_main_spawn:
 			{
 				AddMarker( map, offset, "spawn" );
-				PlaceMostLikelyTile(map, offset);
+				map.SetTile(offset, getTileTypeFromTerrainColor(getInferredTerrainPixel(pixelPos)));
+				if (image !is null && image.isLoaded())
+				{
+					image.setPixelOffset(offset);
+				}
 				break;
 			}
 			case sr3d_map_colors::color_station: 
@@ -228,6 +292,10 @@ class PNGLoader
 			case sr3d_map_colors::color_water:
 			{
 				map.SetTile(offset, CMap::water ); break;
+			}
+			case sr3d_map_colors::color_shoal:
+			{
+				map.SetTile(offset, getTileTypeFromTerrainColor(pixel)); break;
 			}
 
 			case sr3d_map_colors::color_sand:
@@ -774,6 +842,150 @@ class PNGLoader
 		map.RemoveTileFlag( offset, Tile::SOLID | Tile::COLLISION);
 		map.AddTileFlag( offset, Tile::BACKGROUND | Tile::LIGHT_PASSES);
 	}
+}
+
+shared bool isTerrainMarkerColor( SColor pixel )
+{
+	return pixel.color == sr3d_map_colors::color_main_spawn;
+}
+
+shared SColor getBaseTerrainColor( SColor pixel )
+{
+	switch (pixel.color)
+	{
+		case sr3d_map_colors::color_palmtree:
+		case sr3d_map_colors::color_station:
+			return sr3d_map_colors::color_sand;
+	}
+
+	return pixel;
+}
+
+shared int getTerrainWaterDepth( SColor pixel )
+{
+	switch (pixel.color)
+	{
+		case sr3d_map_colors::color_shoal:
+		case sr3d_map_colors::color_water_1:  return 1;
+		case sr3d_map_colors::color_water_2:  return 2;
+		case sr3d_map_colors::color_water_3:  return 3;
+		case sr3d_map_colors::color_water_4:  return 4;
+		case sr3d_map_colors::color_water_5:  return 5;
+		case sr3d_map_colors::color_water_6:  return 6;
+		case sr3d_map_colors::color_water_7:  return 7;
+		case sr3d_map_colors::color_water_8:  return 8;
+		case sr3d_map_colors::color_water_9:  return 9;
+		case sr3d_map_colors::color_water_10: return 10;
+		case sr3d_map_colors::color_water_11: return 11;
+		case sr3d_map_colors::color_water_12: return 12;
+		case sr3d_map_colors::color_water_13: return 13;
+		case sr3d_map_colors::color_water_14: return 14;
+		case sr3d_map_colors::color_water_15: return 15;
+		case sr3d_map_colors::color_water_16: return 16;
+		case sr3d_map_colors::color_water_17: return 17;
+		case sr3d_map_colors::color_water_18: return 18;
+		case sr3d_map_colors::color_water_19: return 19;
+		case sr3d_map_colors::color_water_20: return 20;
+		case sr3d_map_colors::color_water_21: return 21;
+		case sr3d_map_colors::color_water_22: return 22;
+		case sr3d_map_colors::color_water:    return 23;
+	}
+
+	return -1;
+}
+
+shared SColor getTerrainWaterColor( int depth )
+{
+	if (depth <= 1)  return sr3d_map_colors::color_water_1;
+	if (depth == 2)  return sr3d_map_colors::color_water_2;
+	if (depth == 3)  return sr3d_map_colors::color_water_3;
+	if (depth == 4)  return sr3d_map_colors::color_water_4;
+	if (depth == 5)  return sr3d_map_colors::color_water_5;
+	if (depth == 6)  return sr3d_map_colors::color_water_6;
+	if (depth == 7)  return sr3d_map_colors::color_water_7;
+	if (depth == 8)  return sr3d_map_colors::color_water_8;
+	if (depth == 9)  return sr3d_map_colors::color_water_9;
+	if (depth == 10) return sr3d_map_colors::color_water_10;
+	if (depth == 11) return sr3d_map_colors::color_water_11;
+	if (depth == 12) return sr3d_map_colors::color_water_12;
+	if (depth == 13) return sr3d_map_colors::color_water_13;
+	if (depth == 14) return sr3d_map_colors::color_water_14;
+	if (depth == 15) return sr3d_map_colors::color_water_15;
+	if (depth == 16) return sr3d_map_colors::color_water_16;
+	if (depth == 17) return sr3d_map_colors::color_water_17;
+	if (depth == 18) return sr3d_map_colors::color_water_18;
+	if (depth == 19) return sr3d_map_colors::color_water_19;
+	if (depth == 20) return sr3d_map_colors::color_water_20;
+	if (depth == 21) return sr3d_map_colors::color_water_21;
+	if (depth == 22) return sr3d_map_colors::color_water_22;
+	return sr3d_map_colors::color_water;
+}
+
+shared SColor chooseInferredTerrainColor( f32 waterWeight, f32 waterDepthTotal, f32 shoalWeight, f32 sandWeight, f32 grassWeight, f32 rockWeight )
+{
+	const f32 landWeight = sandWeight + grassWeight + rockWeight;
+	if (waterWeight <= 0.0f && landWeight <= 0.0f)
+	{
+		return sr3d_map_colors::color_water;
+	}
+
+	if (waterWeight >= landWeight)
+	{
+		if (shoalWeight > 0.0f && shoalWeight >= waterWeight * 0.5f)
+		{
+			return sr3d_map_colors::color_shoal;
+		}
+
+		return getTerrainWaterColor(int(Maths::Round(waterDepthTotal / Maths::Max(waterWeight, 0.001f))));
+	}
+
+	if (grassWeight > sandWeight && grassWeight >= rockWeight)
+	{
+		return sr3d_map_colors::color_grass;
+	}
+
+	if (rockWeight > sandWeight && rockWeight > grassWeight)
+	{
+		return sr3d_map_colors::color_rock;
+	}
+
+	return sr3d_map_colors::color_sand;
+}
+
+TileType getTileTypeFromTerrainColor( SColor pixel )
+{
+	switch (getBaseTerrainColor(pixel).color)
+	{
+		case sr3d_map_colors::color_grass:    return CMap::grass;
+		case sr3d_map_colors::color_sand:     return CMap::sand;
+		case sr3d_map_colors::color_rock:     return CMap::rock;
+		case sr3d_map_colors::color_shoal:
+		case sr3d_map_colors::color_water_1:  return CMap::water_1;
+		case sr3d_map_colors::color_water_2:  return CMap::water_2;
+		case sr3d_map_colors::color_water_3:  return CMap::water_3;
+		case sr3d_map_colors::color_water_4:  return CMap::water_4;
+		case sr3d_map_colors::color_water_5:  return CMap::water_5;
+		case sr3d_map_colors::color_water_6:  return CMap::water_6;
+		case sr3d_map_colors::color_water_7:  return CMap::water_7;
+		case sr3d_map_colors::color_water_8:  return CMap::water_8;
+		case sr3d_map_colors::color_water_9:  return CMap::water_9;
+		case sr3d_map_colors::color_water_10: return CMap::water_10;
+		case sr3d_map_colors::color_water_11: return CMap::water_11;
+		case sr3d_map_colors::color_water_12: return CMap::water_12;
+		case sr3d_map_colors::color_water_13: return CMap::water_13;
+		case sr3d_map_colors::color_water_14: return CMap::water_14;
+		case sr3d_map_colors::color_water_15: return CMap::water_15;
+		case sr3d_map_colors::color_water_16: return CMap::water_16;
+		case sr3d_map_colors::color_water_17: return CMap::water_17;
+		case sr3d_map_colors::color_water_18: return CMap::water_18;
+		case sr3d_map_colors::color_water_19: return CMap::water_19;
+		case sr3d_map_colors::color_water_20: return CMap::water_20;
+		case sr3d_map_colors::color_water_21: return CMap::water_21;
+		case sr3d_map_colors::color_water_22: return CMap::water_22;
+		case sr3d_map_colors::color_water:    return CMap::water;
+	}
+
+	return CMap::water;
 }
 
 void SaveMap(CMap@ map, const string &in fileName)

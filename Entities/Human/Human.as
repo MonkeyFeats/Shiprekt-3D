@@ -38,12 +38,9 @@ string menu_selected = "build_menu";
 const string ATTACHED_SEAT_ID = "attached seat id";
 const string SEAT_CAMERA_SNAP_ID = "seat camera snap id";
 const string SHIP_STAY_ID = "shipID";
-const string SHIP_STAY_COUNT = "stay count";
 const string SHIP_STAY_POS = "stay ship pos";
+const string SHIP_STAY_Y = "stay ship y";
 const string SHIP_STAY_ANGLE = "stay ship angle";
-const string HUMAN_SHIP_VISUAL_OFFSET_Y = "human ship visual offset y";
-const f32 HUMAN_SHIP_VISUAL_LERP = 0.22f;
-const f32 HUMAN_SHIP_VISUAL_RETURN_LERP = 0.14f;
 
 Vec2f Human3DXZ(Vec3f v)
 {
@@ -199,8 +196,8 @@ void onInit( CBlob@ this )
 
 			this.setPosition( core.getPosition() );
 			this.set_u16( SHIP_STAY_ID, core.getNetworkID() );
-			this.set_s8( SHIP_STAY_COUNT, 3 );
 			this.set_Vec2f(SHIP_STAY_POS, core.getInterpolatedPosition());
+			this.set_f32(SHIP_STAY_Y, GetShipStayReferenceY(core));
 			this.set_f32(SHIP_STAY_ANGLE, core.getAngleDegrees());
 			//blob3d.setPosition(V2toV3(core.getPosition()));
 
@@ -221,6 +218,7 @@ void onInit( CBlob@ this )
 	this.set_u32("groundTouch time", 0);
 	this.set_bool( "onGround", true );//for syncing
 	this.set_Vec2f(SHIP_STAY_POS, this.getPosition());
+	this.set_f32(SHIP_STAY_Y, 0.0f);
 	this.set_f32(SHIP_STAY_ANGLE, 0.0f);
 	this.getShape().getVars().onground = true;
 	directionalSoundPlay( "Respawn", this.getInterpolatedPosition(), 2.5f );
@@ -261,10 +259,6 @@ void UpdateHumanSeatCollision(CBlob@ this, Blob3D@ blob3d)
 	const bool attached = this.isAttached();
 	blob3d.shape.Attached = attached;
 	blob3d.shape.setCollides(!attached);
-	if (attached)
-	{
-		this.set_f32(HUMAN_SHIP_VISUAL_OFFSET_Y, 0.0f);
-	}
 }
 
 void UpdateAttachedSeatTransform(CBlob@ this, Blob3D@ blob3d)
@@ -401,44 +395,15 @@ void SetHumanGrounded(CBlob@ this, Blob3D@ blob3d, bool grounded)
 	}
 }
 
-void UpdateHumanShipVisualOffset(CBlob@ this, Blob3D@ blob3d)
+void ClearHumanShipRenderOffset(CBlob@ this, Blob3D@ blob3d)
 {
 	if (blob3d is null)
 	{
 		return;
 	}
 
-	f32 currentOffsetY = this.get_f32(HUMAN_SHIP_VISUAL_OFFSET_Y);
-	f32 targetOffsetY = 0.0f;
 	blob3d.renderRotation = Vec3f();
-
-	CRules@ rules = getRules();
-	if (getNet().isClient() && !this.isAttached() && (rules is null || !rules.get_bool(SHIP_WAVE_VISUALS_DISABLED)))
-	{
-		Island@ island = getIsland(this);
-		if (island !is null && (this.isMyPlayer() || AreHumanFeetGrounded(this, blob3d)))
-		{
-			Vec2f islandOffset = blob3d.transform.Position.xz() - island.pos;
-			targetOffsetY = GetIslandWaveVisualY(island, islandOffset);
-		}
-	}
-
-	if (this.isMyPlayer())
-	{
-		currentOffsetY = targetOffsetY;
-	}
-	else
-	{
-		const f32 lerpFactor = targetOffsetY != 0.0f ? HUMAN_SHIP_VISUAL_LERP : HUMAN_SHIP_VISUAL_RETURN_LERP;
-		currentOffsetY += (targetOffsetY - currentOffsetY) * lerpFactor;
-	}
-	if (Maths::Abs(currentOffsetY) < 0.01f && Maths::Abs(targetOffsetY) < 0.01f)
-	{
-		currentOffsetY = 0.0f;
-	}
-
-	this.set_f32(HUMAN_SHIP_VISUAL_OFFSET_Y, currentOffsetY);
-	blob3d.renderOffset = Vec3f(0.0f, currentOffsetY, 0.0f);
+	blob3d.renderOffset = Vec3f();
 }
 
 void UpdateAimPosition3D(CBlob@ this)
@@ -492,6 +457,17 @@ CBlob@ GetShipStayReference(CBlob@ shipBlob)
 	return shipBlob;
 }
 
+f32 GetShipStayReferenceY(CBlob@ referenceBlob)
+{
+	Blob3D@ reference3d;
+	if (referenceBlob !is null && referenceBlob.get("blob3d", @reference3d) && reference3d !is null)
+	{
+		return reference3d.getPosition().y;
+	}
+
+	return 0.0f;
+}
+
 void CacheShipStayTransform(CBlob@ this, CBlob@ shipBlob)
 {
 	CBlob@ referenceBlob = GetShipStayReference(shipBlob);
@@ -501,8 +477,8 @@ void CacheShipStayTransform(CBlob@ this, CBlob@ shipBlob)
 	}
 
 	this.set_u16(SHIP_STAY_ID, referenceBlob.getNetworkID());
-	this.set_s8(SHIP_STAY_COUNT, 3);
 	this.set_Vec2f(SHIP_STAY_POS, referenceBlob.getInterpolatedPosition());
+	this.set_f32(SHIP_STAY_Y, GetShipStayReferenceY(referenceBlob));
 	this.set_f32(SHIP_STAY_ANGLE, referenceBlob.getAngleDegrees());
 }
 
@@ -516,19 +492,24 @@ void ApplyShipStayMotion(CBlob@ this, Blob3D@ blob3d, CBlob@ shipBlob)
 
 	if (this.get_u16(SHIP_STAY_ID) != referenceBlob.getNetworkID())
 	{
+		CacheShipStayTransform(this, shipBlob);
 		return;
 	}
 
 	Vec2f oldShipPos = this.get_Vec2f(SHIP_STAY_POS);
 	Vec2f newShipPos = referenceBlob.getInterpolatedPosition();
+	f32 oldShipY = this.get_f32(SHIP_STAY_Y);
+	f32 newShipY = GetShipStayReferenceY(referenceBlob);
 	f32 oldShipAngle = this.get_f32(SHIP_STAY_ANGLE);
 	f32 newShipAngle = referenceBlob.getAngleDegrees();
 
-	Vec2f playerOffset = blob3d.transform.Position.xz() - oldShipPos;
+	Vec2f newPlayerPos = blob3d.transform.Position.xz();
+	Vec2f playerOffset = newPlayerPos - oldShipPos;
 	playerOffset.RotateBy(newShipAngle - oldShipAngle);
-	Vec2f newPlayerPos = newShipPos + playerOffset;
+	newPlayerPos = oldShipPos + playerOffset + (newShipPos - oldShipPos);
 
 	blob3d.transform.Position.x = newPlayerPos.x;
+	blob3d.transform.Position.y += newShipY - oldShipY;
 	blob3d.transform.Position.z = newPlayerPos.y;
 	this.setPosition(newPlayerPos);
 	if (blob3d.shape !is null)
@@ -537,6 +518,7 @@ void ApplyShipStayMotion(CBlob@ this, Blob3D@ blob3d, CBlob@ shipBlob)
 	}
 
 	this.set_Vec2f(SHIP_STAY_POS, newShipPos);
+	this.set_f32(SHIP_STAY_Y, newShipY);
 	this.set_f32(SHIP_STAY_ANGLE, newShipAngle);
 }
 
@@ -555,7 +537,7 @@ void onTick( CBlob@ this )
 
 	this.setPosition(blob3d.getPosition().xz());
 
-	UpdateHumanShipVisualOffset(this, blob3d);
+	ClearHumanShipRenderOffset(this, blob3d);
 	UpdateAimPosition3D(this);
 
 	Update( this );
@@ -613,10 +595,6 @@ void Update( CBlob@ this )
 	
 	if (!attached)
 	{
-		const bool up = this.isKeyPressed( key_up );
-		const bool down = this.isKeyPressed( key_down );
-		const bool left = this.isKeyPressed( key_left);
-		const bool right = this.isKeyPressed( key_right );	
 		const bool action1 = this.isKeyPressed( key_action1 );
 		const u32 time = getGameTime();
 		const f32 vellen = shape.vellen;
@@ -657,31 +635,15 @@ void Update( CBlob@ this )
 		// artificial stay on ship
 		if ( myPlayer )
 		{
-			const bool pressingMove = up || down || left || right;
 			CBlob@ islandBlob = getIslandBlob( this );
-			if (islandBlob !is null)
+			if (solidGround && islandBlob !is null)
 			{
 				ApplyShipStayMotion(this, blob3d, islandBlob);
 				CacheShipStayTransform(this, islandBlob);
 			}
 			else
 			{
-				CBlob@ shipBlob = getBlobByNetworkID( this.get_u16( SHIP_STAY_ID ) );
-				if (shipBlob !is null)
-				{
-					s8 count = this.get_s8( SHIP_STAY_COUNT );		
-					count--;
-					if (count <= 0){
-						this.set_u16( SHIP_STAY_ID, 0 );	
-					}
-					else if ( !pressingMove )
-					{
-						Island@ isle = getIsland( shipBlob.getShape().getVars().customData );
-						if ( isle !is null )
-							ApplyShipStayMotion(this, blob3d, shipBlob);
-					}
-					this.set_s8( SHIP_STAY_COUNT, count );
-				}
+				this.set_u16( SHIP_STAY_ID, 0 );
 			}
 		}
 	}

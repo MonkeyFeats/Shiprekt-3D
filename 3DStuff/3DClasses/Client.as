@@ -726,18 +726,22 @@ void RefreshShipBlockTransformForRender(CBlob@ blob, Blob3D@ blob3d)
 		offset.RotateBy(island.angle);
 		Vec2f blockPos = island.pos + offset;
 		const f32 worldAngle = island.angle + isleBlock.angle_offset;
+		const f32 blockY = GetIslandWaveVisualY(island, offset);
+		Vec3f blockPos3D(blockPos.x, blockY, blockPos.y);
 
-		blob3d.setPosition(V2toV3(blockPos));
+		blob3d.setPosition(blockPos3D);
 		blob3d.transform.Orientation.x = worldAngle;
 		blob3d.transform.Orientation.y = 0.0f;
 		blob3d.transform.Orientation.z = 0.0f;
+		blob3d.renderOffset = Vec3f();
+		blob3d.renderRotation = GetIslandWaveVisualRotation(island);
 
 		if (blob3d.shape !is null)
 		{
 			blob3d.shape.setPosition(blob3d.getPosition());
 			blob3d.shape.transform.Orientation.x = worldAngle;
-			blob3d.shape.transform.Orientation.y = 0.0f;
-			blob3d.shape.transform.Orientation.z = 0.0f;
+			blob3d.shape.transform.Orientation.y = blob3d.renderRotation.x;
+			blob3d.shape.transform.Orientation.z = blob3d.renderRotation.z;
 		}
 		blob3d.SyncExtraShapes();
 		return;

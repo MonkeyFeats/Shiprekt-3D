@@ -468,11 +468,13 @@ void UpdateIslandBlob( CBlob@ blob, Island @isle, IslandBlock@ isle_block )
 	Vec2f offset = GetIslandBlockWorldOffset( isle, isle_block );
 	const f32 worldAngle = isle.angle + isle_block.angle_offset;
 	const Vec2f blockPos = GetIslandBlockWorldPosition( isle, isle_block );
+	const f32 blockY = GetIslandWaveVisualY( isle, offset );
+	Vec3f blockPos3D( blockPos.x, blockY, blockPos.y );
 
 	Blob3D@ blob3d;
 	if (blob.get("blob3d", @blob3d))
 	{		
-		blob3d.setPosition( V2toV3( blockPos ) );
+		blob3d.setPosition( blockPos3D );
 		blob3d.transform.Orientation.x = worldAngle;
 		blob3d.transform.Orientation.y = 0.0f;
 		blob3d.transform.Orientation.z = 0.0f;
@@ -486,10 +488,11 @@ void UpdateIslandBlob( CBlob@ blob, Island @isle, IslandBlock@ isle_block )
 		{
 			blob3d.shape.setPosition( blob3d.getPosition() );
 			blob3d.shape.transform.Orientation.x = worldAngle;
-			blob3d.shape.transform.Orientation.y = 0.0f;
-			blob3d.shape.transform.Orientation.z = 0.0f;
+			blob3d.shape.transform.Orientation.y = blob3d.renderRotation.x;
+			blob3d.shape.transform.Orientation.z = blob3d.renderRotation.z;
 			//blob3d.shape.setAngleDegreesXZ( -worldAngle );
 		}
+		blob3d.SyncExtraShapes();
 
 		//blob3d.shape.UpdateAttributes(SColor(255,255,0,255));
 	}
@@ -562,7 +565,7 @@ void ApplyIslandWaveVisualToBlob( Island@ isle, Vec2f worldOffset, const f32 wor
 		return;
 	}
 
-	blob3d.renderOffset = Vec3f(0.0f, GetIslandWaveVisualY(isle, worldOffset), 0.0f);
+	blob3d.renderOffset = Vec3f();
 	blob3d.renderRotation = GetIslandWaveVisualRotation(isle);
 }
 

@@ -14,8 +14,10 @@
 
 const f32 HUMAN_WATER_SURFACE_DEADBAND = 5.2f;
 const f32 HUMAN_WATER_EXIT_HEIGHT = 2.0f;
-const f32 HUMAN_WATER_JUMP_DEPTH = 2.5f;
-const f32 HUMAN_WATER_JUMP_FORCE = 220.0f;
+const f32 HUMAN_WATER_JUMP_DEPTH = 18.0f;
+const f32 HUMAN_WATER_JUMP_FORCE = 90.0f;
+const f32 HUMAN_WATER_JUMP_VELOCITY = 9.0f;
+const f32 HUMAN_WATER_JUMP_SURFACE_CLEARANCE = 0.5f;
 const f32 HUMAN_WATER_SURFACE_FOLLOW_FORCE = 10.0f;
 const f32 HUMAN_JUMP_HOLD_FORCE = 34.0f;
 const s32 HUMAN_JUMP_HOLD_TICKS = 30;
@@ -216,6 +218,18 @@ void onTick(CMovement@ this)
 			jumpState = 0;
 			blob.set_u32(HUMAN_LAST_JUMP_TIME, getGameTime());
 			shape.inWater = false;
+			Vec3f velocity = rb.getVelocity();
+			if (velocity.y < HUMAN_WATER_JUMP_VELOCITY)
+			{
+				velocity.y = HUMAN_WATER_JUMP_VELOCITY;
+				rb.setSolvedVelocity(velocity);
+			}
+
+			if (blob3d.transform.Position.y < waterSurfaceY + HUMAN_WATER_JUMP_SURFACE_CLEARANCE)
+			{
+				blob3d.transform.Position.y = waterSurfaceY + HUMAN_WATER_JUMP_SURFACE_CLEARANCE;
+				shape.setPosition(blob3d.transform.Position);
+			}
 		}
 		else if (jumpState > 0 && jumpHeld)
 		{

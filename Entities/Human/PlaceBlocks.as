@@ -116,7 +116,13 @@ void onTick( CBlob@ this )
 
 				//print(""+blocks.length);	
 				for (uint i = 0; i < blocks.length; ++i)
-				{				
+				{
+					if (blocks[i] is null)
+					{
+						warn("PlaceBlocks: held block is null at index " + i);
+						continue;
+					}
+
 					if (toofar)
 					{
 						blocks[i].set_bool("red",true);	
@@ -141,8 +147,10 @@ void onTick( CBlob@ this )
 					}
 					
 					if ( cLinked )
+					{
 						blocks[i].set_bool("red",true);
 						SetDisplay( blocks[i], SColor(255, 255, 0, 0), RenderStyle::additive );
+					}
 				}
 				
 				//can'tPlace heltips
@@ -214,6 +222,11 @@ void onTick( CBlob@ this )
             for (uint i = 0; i < blocks.length; ++i)
             {
                 CBlob @block = blocks[i];
+				if (block is null)
+				{
+					warn("PlaceBlocks: held block is null while marking water placement");
+					continue;
+				}
                 block.set_bool("red",true);
                 SetDisplay( block, SColor(255, 255, 0, 0), RenderStyle::light, -10.0f);
             }
@@ -269,6 +282,12 @@ void PositionBlocks( CBlob@[]@ blocks, Vec2f pos, Vec3f placementPoint, const f3
 	for (uint i = 0; i < blocks.length; ++i)
 	{
 		CBlob @block = blocks[i];
+		if (block is null)
+		{
+			warn("PositionBlocks: held block is null at index " + i);
+			continue;
+		}
+
 		Vec2f offset = block.get_Vec2f( "offset" );
 		offset.RotateBy( blocks_angle );                        
 		offset.RotateBy( refBAngle );                
@@ -399,7 +418,19 @@ void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
 
 void SetDisplay( CBlob@ blob, SColor color, RenderStyle::Style style, f32 Z=-10000)
 {
+	if (blob is null)
+	{
+		warn("SetDisplay: blob is null");
+		return;
+	}
+
     CSprite@ sprite = blob.getSprite();
+	if (sprite is null)
+	{
+		warn("SetDisplay: sprite is null for blob " + blob.getNetworkID());
+		return;
+	}
+
     sprite.asLayer().SetColor( color );
     sprite.asLayer().setRenderStyle( style );
     if (Z>-10000){

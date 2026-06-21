@@ -8,8 +8,16 @@ void onInit( CBlob@ this )
 		CBlob@ owner = getBlobByNetworkID( this.get_u16( "ownerID" ) );    
 		if ( owner !is null )
 		{
-			this.set_string( "playerOwner", owner.getPlayer().getUsername() );
-			this.Sync( "playerOwner", true );
+			CPlayer@ ownerPlayer = owner.getPlayer();
+			if (ownerPlayer !is null)
+			{
+				this.set_string( "playerOwner", ownerPlayer.getUsername() );
+				this.Sync( "playerOwner", true );
+			}
+			else
+			{
+				warn("Coupling owner has no player: block=" + this.getNetworkID() + " owner=" + owner.getNetworkID());
+			}
 		}
 	}
     this.addCommandID("decouple");
@@ -26,6 +34,7 @@ void GetButtonsFor( CBlob@ this, CBlob@ caller )
 	//only owners can directly destroy the coupling
     if( this.getDistanceTo(caller) < Block::BUTTON_RADIUS_FLOOR
 		&& !getMap().isBlobWithTagInRadius( "seat", caller.getPosition(), 0.0f )
+		&& caller.getPlayer() !is null
 		&& caller.getPlayer().getUsername() == this.get_string( "playerOwner" ) )
 	{
 		caller.CreateGenericButton( 2, Vec2f(0.0f, 0.0f), this, this.getCommandID("decouple"), "Decouple" );

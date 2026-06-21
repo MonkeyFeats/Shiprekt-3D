@@ -38,6 +38,12 @@ void Reseed()
 void MakeBlock( Block::Type type, Vec2f offset, Vec2f pos, CBlob@[]@ list, const uint team )
 {
 	CBlob@ b = makeBlock( pos + offset*Block::size, 0.0f, type, team );
+	if (b is null)
+	{
+		warn("MakeBlock: server_CreateBlob failed for type " + type);
+		return;
+	}
+
 	list.push_back(b);
 	b.set_Vec2f("offset", b.getPosition());
 }

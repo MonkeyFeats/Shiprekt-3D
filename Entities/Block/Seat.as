@@ -18,7 +18,16 @@ void onInit( CBlob@ this )
 		
 		CBlob@ owner = getBlobByNetworkID( this.get_u16( "ownerID" ) );    
 		if ( owner !is null )
-			server_setOwner( this, owner.getPlayer().getUsername() );
+		{
+			CPlayer@ ownerPlayer = owner.getPlayer();
+			if (ownerPlayer !is null)
+				server_setOwner( this, ownerPlayer.getUsername() );
+			else
+			{
+				warn("Seat owner has no player: block=" + this.getNetworkID() + " owner=" + owner.getNetworkID());
+				server_setOwner( this, "" );
+			}
+		}
 		else
 			server_setOwner( this, "" );
 			

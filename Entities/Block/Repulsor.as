@@ -25,8 +25,16 @@ void onInit( CBlob@ this )
 		CBlob@ owner = getBlobByNetworkID( this.get_u16( "ownerID" ) );    
 		if ( owner !is null )
 		{
-			this.set_string( "playerOwner", owner.getPlayer().getUsername() );
-			this.Sync( "playerOwner", true );
+			CPlayer@ ownerPlayer = owner.getPlayer();
+			if (ownerPlayer !is null)
+			{
+				this.set_string( "playerOwner", ownerPlayer.getUsername() );
+				this.Sync( "playerOwner", true );
+			}
+			else
+			{
+				warn("Repulsor owner has no player: block=" + this.getNetworkID() + " owner=" + owner.getNetworkID());
+			}
 		}
 	}
 

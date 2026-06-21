@@ -45,8 +45,11 @@ namespace Human
 		{
 			for (uint i = 0; i < blocks.length; ++i)
 			{
-				blocks[i].Tag( "disabled" );
-				blocks[i].server_Die();
+				if (blocks[i] !is null)
+				{
+					blocks[i].Tag( "disabled" );
+					blocks[i].server_Die();
+				}
 			}
 
 			blocks.clear();

@@ -1416,6 +1416,12 @@ void onDie( CBlob@ this )
 				u16 returnBooty = 0;
 				for (uint i = 0; i < blocks.length; ++i)
 				{
+					if (blocks[i] is null)
+					{
+						warn("Human onDie: held block is null at index " + i);
+						continue;
+					}
+
 					int type = Block::getType( blocks[i] );
 					if ( type != Block::COUPLING && blocks[i].getShape().getVars().customData == -1 )
 						returnBooty += Block::getCost( type );

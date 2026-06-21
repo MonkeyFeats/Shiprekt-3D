@@ -18,6 +18,15 @@ const f32 BLAST_RADIUS = 25 * 16.0f;
 const u8 MAX_TEAM_FLAKS = 100;
 const u8 MAX_TOTAL_FLAKS = 1000;
 u8 DAMAGE_FRAMES = 3;
+const bool DEBUG_BLOCK_PULL = true;
+
+void DebugBlockPull(const string &in message)
+{
+	if (DEBUG_BLOCK_PULL)
+	{
+		print("[BlockPull] " + message);
+	}
+}
 
 void onInit( CBlob@ this )
 {
@@ -46,23 +55,75 @@ void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
 {
     if (cmd == this.getCommandID("buyBlock"))
     {
-		CBlob@ caller = getBlobByNetworkID( params.read_u16() );
-		if ( caller is null )
+		u16 callerID = 0;
+		if (!params.saferead_u16(callerID))
+		{
+			DebugBlockPull("buyBlock aborted: missing caller id");
 			return;
+		}
+
+		CBlob@ caller = getBlobByNetworkID( callerID );
+		if ( caller is null )
+		{
+			DebugBlockPull("buyBlock aborted: caller not found id=" + callerID);
+			return;
+		}
 			
-		string block = params.read_string();
+		string block;
+		if (!params.saferead_string(block))
+		{
+			DebugBlockPull("buyBlock aborted: missing block string caller=" + callerID);
+			return;
+		}
+
+		DebugBlockPull("buyBlock received core=" + this.getNetworkID() + " caller=" + callerID + " block=" + block);
 		caller.set_string( "last buy", block );
 
-		if ( !getNet().isServer() || Human::isHoldingBlocks( caller ) || !this.hasTag( "mothership" ) || this.getTeamNum() != caller.getTeamNum() )
+		if ( !getNet().isServer() )
+		{
+			DebugBlockPull("buyBlock ignored on client caller=" + callerID);
 			return;
+		}
+
+		if ( Human::isHoldingBlocks( caller ) )
+		{
+			DebugBlockPull("buyBlock blocked: caller already holding blocks caller=" + callerID);
+			return;
+		}
+
+		if ( !this.hasTag( "mothership" ) )
+		{
+			DebugBlockPull("buyBlock blocked: core missing mothership tag core=" + this.getNetworkID());
+			return;
+		}
+
+		if ( this.getTeamNum() != caller.getTeamNum() )
+		{
+			DebugBlockPull("buyBlock blocked: team mismatch coreTeam=" + this.getTeamNum() + " callerTeam=" + caller.getTeamNum());
+			return;
+		}
 			
 		BuyBlock( this, caller, block );
 	}
     if (cmd == this.getCommandID("returnBlocks"))
 	{
-		CBlob@ caller = getBlobByNetworkID( params.read_u16() );
+		u16 callerID = 0;
+		if (!params.saferead_u16(callerID))
+		{
+			DebugBlockPull("returnBlocks aborted: missing caller id");
+			return;
+		}
+
+		CBlob@ caller = getBlobByNetworkID( callerID );
 		if ( caller !is null )
+		{
+			DebugBlockPull("returnBlocks received core=" + this.getNetworkID() + " caller=" + callerID);
 			ReturnBlocks( this, caller );
+		}
+		else
+		{
+			DebugBlockPull("returnBlocks aborted: caller not found id=" + callerID);
+		}
 	}
 }
 
@@ -80,6 +141,12 @@ void BuyBlock( CBlob@ this, CBlob@ caller, string btype )
 	u8 teamNum = this.getTeamNum();
 	u32 gameTime = getGameTime();
 	CPlayer@ player = caller.getPlayer();
+	if (player is null)
+	{
+		DebugBlockPull("BuyBlock aborted: caller has no player caller=" + caller.getNetworkID() + " block=" + btype);
+		return;
+	}
+
 	string pName = player !is null ? player.getUsername() : "";
 	u16 pBooty = server_getPlayerBooty( pName );
 	bool weapon = btype == "cannon" || btype == "machinegun" || btype == "flak" || btype == "pointDefense" || btype == "launcher" || btype == "bomb";
@@ -195,17 +262,35 @@ void BuyBlock( CBlob@ this, CBlob@ caller, string btype )
 		types.push_back(Block::REPULSOR);
 		cost = c.repulsor;
 	}
+
+	if (types.length == 0)
+	{
+		DebugBlockPull("BuyBlock aborted: unknown block type '" + btype + "' caller=" + caller.getNetworkID());
+		return;
+	}
+
+	const bool freeBuild = getPlayersCount() == 1 || rules.get_bool("freebuild");
+	DebugBlockPull("BuyBlock resolved caller=" + caller.getNetworkID() + " player=" + pName + " block=" + btype + " types=" + types.length + " cost=" + cost + " booty=" + pBooty + " free=" + (freeBuild ? "true" : "false"));
+
 	if ( teamFlaks < MAX_TEAM_FLAKS && totalFlaks < MAX_TOTAL_FLAKS) {
-		if ( getPlayersCount() == 1 || rules.get_bool("freebuild"))
+		if ( freeBuild )
+		{
+			DebugBlockPull("BuyBlock producing free block=" + btype + " caller=" + caller.getNetworkID());
 			ProduceBlock( getRules(), caller, types );
+		}
 		else if ( !coolDown && pBooty >= cost )
 		{
+			DebugBlockPull("BuyBlock charging player=" + pName + " cost=" + cost + " block=" + btype);
 			server_setPlayerBooty( pName, pBooty - cost );
 		
 			ProduceBlock( getRules(), caller, types);
 				
 			if ( btype == "bomb" )
 				this.set( "bombCooldown", gameTime + bombCDTime );
+		}
+		else
+		{
+			DebugBlockPull("BuyBlock denied: cooldown=" + (coolDown ? "true" : "false") + " booty=" + pBooty + " cost=" + cost + " block=" + btype);
 		}
 		//warning for flaks. We dont check block type since teamFlaks and totalFlaks are equals to 0 if type is not a flak.
 		if (MAX_TEAM_FLAKS - teamFlaks <= 3) {
@@ -252,6 +337,12 @@ void ReturnBlocks( CBlob@ this, CBlob@ caller )
 				u16 returnBooty = 0;
 				for (uint i = 0; i < blocks.length; ++i)
 				{
+					if (blocks[i] is null)
+					{
+						DebugBlockPull("ReturnBlocks skipped null held block caller=" + caller.getNetworkID() + " index=" + i);
+						continue;
+					}
+
 					int type = Block::getType( blocks[i] );
 					if ( type != Block::COUPLING && blocks[i].getShape().getVars().customData == -1 )
 						returnBooty += Block::getCost( type );

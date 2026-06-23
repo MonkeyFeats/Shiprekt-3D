@@ -28,6 +28,13 @@ shared class Particle3D
     f32 damping = 0.98f;
     f32 spin = 0.0f;
     f32 stretch = 1.0f;
+    bool segmentedTrail = false;
+    bool pointTrail = false;
+    u8 trailSegments = 5;
+    f32 trailLength = 18.0f;
+    f32 trailGap = 0.28f;
+    u8 maxTrailPoints = 36;
+    Vec3f[] trailPoints;
 
     SColor startColor = SColor(255, 255, 255, 255);
     SColor endColor = SColor(0, 255, 255, 255);
@@ -36,6 +43,7 @@ shared class Particle3D
     u8 facingMode = ParticleFace3D::Camera;
 
     bool IsStatic = false;
+    bool persistent = false;
 
     Particle3D() {}
 
@@ -103,7 +111,18 @@ shared class ParticleSystem3D
             return;
 
         if (particles.length() >= maxParticles)
-            particles.removeAt(0);
+        {
+            int removeIndex = 0;
+            for (uint i = 0; i < particles.length(); i++)
+            {
+                if (particles[i] !is null && !particles[i].persistent)
+                {
+                    removeIndex = i;
+                    break;
+                }
+            }
+            particles.removeAt(removeIndex);
+        }
 
         particles.push_back(particle);
     }
@@ -231,6 +250,18 @@ shared class ParticleSystem3D
         if (halfSize <= 0.0f)
             return;
 
+        if (particle.pointTrail)
+        {
+            RenderPointTrailParticle(particle, cameraPosition, halfSize);
+            return;
+        }
+
+        if (particle.segmentedTrail)
+        {
+            RenderSegmentedTrailParticle(particle, cameraPosition, halfSize);
+            return;
+        }
+
         Vec3f right;
         Vec3f up;
         GetParticleAxes(particle, cameraPosition, right, up);
@@ -253,6 +284,108 @@ shared class ParticleSystem3D
             Vertex(topLeft.x, topLeft.y, topLeft.z, 0, 0, color),
             Vertex(topRight.x, topRight.y, topRight.z, 1, 0, color)
         };
+
+        Render::RawTriangles(particle.textureName, vertices);
+    }
+
+    void RenderPointTrailParticle(Particle3D@ particle, Vec3f cameraPosition, f32 halfWidth)
+    {
+        if (particle.trailPoints.length() < 2)
+            return;
+
+        SColor baseColor = particle.GetColor();
+        Vertex[] vertices;
+
+        for (uint i = 0; i + 1 < particle.trailPoints.length(); i++)
+        {
+            Vec3f p0 = particle.trailPoints[i];
+            Vec3f p1 = particle.trailPoints[i + 1];
+            Vec3f travel = p1 - p0;
+            if (travel.LengthSquared() <= 0.001f)
+                continue;
+
+            travel = travel.Normalize();
+            Vec3f mid = (p0 + p1) * 0.5f;
+            Vec3f toCamera = SafeNormal(cameraPosition - mid, Vec3f(0.0f, 0.0f, 1.0f));
+            Vec3f right = SafeNormal(Cross(toCamera, travel), Vec3f(1.0f, 0.0f, 0.0f));
+            if (right.LengthSquared() <= 0.0001f)
+            {
+                right = SafeNormal(Cross(Vec3f(0.0f, 1.0f, 0.0f), travel), Vec3f(1.0f, 0.0f, 0.0f));
+            }
+
+            const f32 t0 = particle.trailPoints.length() <= 1 ? 0.0f : f32(i) / f32(particle.trailPoints.length() - 1);
+            const f32 t1 = f32(i + 1) / f32(particle.trailPoints.length() - 1);
+            const f32 taper0 = Maths::Lerp(0.22f, 1.0f, t0);
+            const f32 taper1 = Maths::Lerp(0.22f, 1.0f, t1);
+            const f32 alpha0Value = Maths::Clamp(f32(baseColor.getAlpha()) * t0, 0.0f, 255.0f);
+            const f32 alpha1Value = Maths::Clamp(f32(baseColor.getAlpha()) * t1, 0.0f, 255.0f);
+            SColor color0(u8(Maths::Round(alpha0Value)), baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue());
+            SColor color1(u8(Maths::Round(alpha1Value)), baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue());
+
+            Vec3f side0 = right * halfWidth * taper0;
+            Vec3f side1 = right * halfWidth * taper1;
+            Vec3f left0 = p0 - side0;
+            Vec3f right0 = p0 + side0;
+            Vec3f left1 = p1 - side1;
+            Vec3f right1 = p1 + side1;
+
+            vertices.push_back(Vertex(right1.x, right1.y, right1.z, 1, t1, color1));
+            vertices.push_back(Vertex(left1.x, left1.y, left1.z, 0, t1, color1));
+            vertices.push_back(Vertex(left0.x, left0.y, left0.z, 0, t0, color0));
+            vertices.push_back(Vertex(right1.x, right1.y, right1.z, 1, t1, color1));
+            vertices.push_back(Vertex(left0.x, left0.y, left0.z, 0, t0, color0));
+            vertices.push_back(Vertex(right0.x, right0.y, right0.z, 1, t0, color0));
+        }
+
+        Render::RawTriangles(particle.textureName, vertices);
+    }
+
+    void RenderSegmentedTrailParticle(Particle3D@ particle, Vec3f cameraPosition, f32 halfWidth)
+    {
+        Vec3f travel = SafeNormal(particle.velocity, Vec3f(0.0f, 0.0f, 1.0f));
+        Vec3f toCamera = SafeNormal(cameraPosition - particle.position, Vec3f(0.0f, 0.0f, 1.0f));
+        Vec3f right = SafeNormal(Cross(toCamera, travel), Vec3f(1.0f, 0.0f, 0.0f));
+        if (right.LengthSquared() <= 0.0001f)
+        {
+            right = SafeNormal(Cross(Vec3f(0.0f, 1.0f, 0.0f), travel), Vec3f(1.0f, 0.0f, 0.0f));
+        }
+
+        uint segments = particle.trailSegments;
+        if (segments < 1)
+            segments = 1;
+
+        const f32 totalLength = Maths::Max(particle.trailLength, 1.0f);
+        const f32 stepLength = totalLength / f32(segments);
+        SColor baseColor = particle.GetColor();
+        Vertex[] vertices;
+
+        for (uint i = 0; i < segments; i++)
+        {
+            const f32 t0 = f32(i) / f32(segments);
+            const f32 t1 = f32(i + 1) / f32(segments);
+            const f32 taper0 = Maths::Lerp(1.0f, 0.28f, t0);
+            const f32 taper1 = Maths::Lerp(1.0f, 0.28f, t1);
+            const f32 alpha0Value = Maths::Clamp(f32(baseColor.getAlpha()) * (1.0f - t0 * 0.75f), 0.0f, 255.0f);
+            const f32 alpha1Value = Maths::Clamp(f32(baseColor.getAlpha()) * (1.0f - t1 * 0.75f), 0.0f, 255.0f);
+            SColor color0(u8(Maths::Round(alpha0Value)), baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue());
+            SColor color1(u8(Maths::Round(alpha1Value)), baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue());
+
+            Vec3f p0 = particle.position + travel * (stepLength * f32(i));
+            Vec3f p1 = particle.position + travel * (stepLength * f32(i + 1));
+            Vec3f side0 = right * halfWidth * taper0;
+            Vec3f side1 = right * halfWidth * taper1;
+            Vec3f left0 = p0 - side0;
+            Vec3f right0 = p0 + side0;
+            Vec3f left1 = p1 - side1;
+            Vec3f right1 = p1 + side1;
+
+            vertices.push_back(Vertex(right1.x, right1.y, right1.z, 1, t1, color1));
+            vertices.push_back(Vertex(left1.x, left1.y, left1.z, 0, t1, color1));
+            vertices.push_back(Vertex(left0.x, left0.y, left0.z, 0, t0, color0));
+            vertices.push_back(Vertex(right1.x, right1.y, right1.z, 1, t1, color1));
+            vertices.push_back(Vertex(left0.x, left0.y, left0.z, 0, t0, color0));
+            vertices.push_back(Vertex(right0.x, right0.y, right0.z, 1, t0, color0));
+        }
 
         Render::RawTriangles(particle.textureName, vertices);
     }

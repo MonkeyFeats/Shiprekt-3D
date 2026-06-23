@@ -421,6 +421,7 @@ shared class Blob3D
                 f32 tailYawDelta = ownerBlob.get_f32("shark_tail_yaw") - ownerBlob.get_f32("old_shark_tail_yaw");
                 while (tailYawDelta > 180.0f) tailYawDelta -= 360.0f;
                 while (tailYawDelta < -180.0f) tailYawDelta += 360.0f;
+                f32 tailPitch = Maths::Lerp(ownerBlob.get_f32("old_shark_tail_pitch"), ownerBlob.get_f32("shark_tail_pitch"), amount);
                 transform.Position.y = Maths::Lerp(ownerBlob.get_f32("old_shark_y"), ownerBlob.get_f32("shark_y"), amount);
                 transform.Orientation.x = ownerBlob.get_f32("old_shark_yaw") + yawDelta * amount;
                 transform.Orientation.y = Maths::Lerp(ownerBlob.get_f32("old_shark_pitch"), ownerBlob.get_f32("shark_pitch"), amount);
@@ -433,6 +434,7 @@ shared class Blob3D
                         if (child.Name == "shark_tail")
                         {
                             child.LocalTransform.Orientation.x = ownerBlob.get_f32("old_shark_tail_yaw") + tailYawDelta * amount;
+                            child.LocalTransform.Orientation.y = transform.Orientation.y + tailPitch;
                         }
                     }
                 }

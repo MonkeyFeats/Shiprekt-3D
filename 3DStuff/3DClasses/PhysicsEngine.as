@@ -98,10 +98,51 @@ shared class PhysicsWorld
 	{
 		for (uint i = 0; i < Bodies.length; i++)
 		{
-			if (Bodies[i] is null)
+			RigidBody@ body = Bodies[i];
+			if (body is null)
 				continue;
 
-			Bodies[i].Update(dt);
+			body.Update(dt);
+			PublishBodyTransform(body);
+		}
+	}
+
+	void PublishBodyTransform(RigidBody@ body)
+	{
+		if (body is null || body.parent is null)
+			return;
+
+		Blob3D@ blob3d = body.parent;
+		if (blob3d.shape !is null)
+		{
+			blob3d.shape.setPosition(blob3d.transform.Position);
+		}
+
+		CBlob@ blob = blob3d.ownerBlob;
+		if (blob is null)
+			return;
+
+		blob.setPosition(blob3d.getPosition().xz());
+
+		if (!getNet().isServer() || blob.getName() != "human")
+			return;
+
+		Vec2f pos = blob3d.getPosition().xz();
+		Vec2f oldPos = blob.exists("human 3d net pos") ? blob.get_Vec2f("human 3d net pos") : pos;
+		const f32 oldY = blob.exists("human 3d net y") ? blob.get_f32("human 3d net y") : blob3d.getPosition().y;
+		blob.set_Vec2f("human 3d net old pos", oldPos);
+		blob.set_Vec2f("human 3d net pos", pos);
+		blob.set_f32("human 3d net old y", oldY);
+		blob.set_f32("human 3d net y", blob3d.getPosition().y);
+		blob.set_bool("onGround", blob3d.shape !is null && blob3d.shape.onGround);
+
+		if (getGameTime() % 2 == 0)
+		{
+			blob.Sync("human 3d net old pos", true);
+			blob.Sync("human 3d net pos", true);
+			blob.Sync("human 3d net old y", true);
+			blob.Sync("human 3d net y", true);
+			blob.Sync("onGround", true);
 		}
 	}
 
@@ -143,6 +184,7 @@ bool SolveCollisionsAndApply(float dt, bool &out foundAny)
 		if (blob is null)
 			continue;
 
+		nearby.clear();
 		if (!getMap().getBlobsInRadius( owner.getPosition().xz(), 36.0f, @nearby)) continue;
 
 		sorted.clear();
@@ -212,9 +254,8 @@ bool SolveCollisionsAndApply(float dt, bool &out foundAny)
 			if (collisionCount > 0)
 			{
 				accumulatedNormal = accumulatedNormal.Normalize();
+				MarkShapeGroundedFromCollision(bodyA, accumulatedNormal);
 				CalculateImpulse(bodyA, accumulatedNormal, accumulatedRestitution / collisionCount, false);
-
-				return true;
 			}
 		}
 	}
@@ -372,6 +413,26 @@ bool SolveCollisionsAndApply(float dt, bool &out foundAny)
 	    vel -= normal * ((1.0f + restitution) * vn);
 
 	    body.setSolvedVelocity(vel);
+	}
+
+	void MarkShapeGroundedFromCollision(RigidBody@ body, Vec3f normal)
+	{
+		if (body is null || body.parent is null || body.parent.shape is null)
+			return;
+
+		if (normal.y <= COLLISION_GROUND_NORMAL_Y)
+			return;
+
+		Vec3f vel = body.pendingVelocityCorrection;
+		if (vel.LengthSquared() <= 0.0000001f)
+		{
+			vel = body.getVelocity();
+		}
+
+		if (vel.y <= COLLISION_REST_NORMAL_VELOCITY)
+		{
+			body.parent.shape.onGround = true;
+		}
 	}
 
 

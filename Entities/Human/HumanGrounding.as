@@ -52,6 +52,11 @@ bool AreHumanFeetGrounded(CBlob@ blob, Blob3D@ blob3d)
 	Vec3f feet = blob3d.getPosition();
 	Vec3f velocity = GetHumanSolvedVelocity(blob3d);
 
+	if (blob3d.shape !is null && blob3d.shape.onGround && velocity.y <= HUMAN_GROUNDED_MAX_UP_VELOCITY)
+	{
+		return true;
+	}
+
 	World@ world;
 	if (getMap().get("terrainInfo", @world))
 	{

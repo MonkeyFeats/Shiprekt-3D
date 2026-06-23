@@ -72,7 +72,7 @@ void SyncCamera(CBlob@ this)
 void HandleCamera(CBlob@ this, CBitStream@ bt, bool apply)
 {
 	if(!apply) return;
-	
+
 	float dirX;
 	if(!bt.saferead_f32(dirX)) return;
 

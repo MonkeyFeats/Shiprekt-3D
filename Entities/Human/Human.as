@@ -41,6 +41,15 @@ const string SHIP_STAY_ID = "shipID";
 const string SHIP_STAY_POS = "stay ship pos";
 const string SHIP_STAY_Y = "stay ship y";
 const string SHIP_STAY_ANGLE = "stay ship angle";
+const string HUMAN_3D_NET_POS = "human 3d net pos";
+const string HUMAN_3D_NET_OLD_POS = "human 3d net old pos";
+const string HUMAN_3D_NET_Y = "human 3d net y";
+const string HUMAN_3D_NET_OLD_Y = "human 3d net old y";
+const u32 HUMAN_3D_SYNC_RATE = 2;
+const f32 HUMAN_3D_SPAWN_Y = 16.0f;
+const f32 HUMAN_3D_WATER_EXIT_HEIGHT = 2.0f;
+const f32 HUMAN_3D_OWNER_CORRECTION_SNAP = 4.0f;
+const u8 HUMAN_3D_TEAM = 6;
 
 Vec2f Human3DXZ(Vec3f v)
 {
@@ -165,28 +174,9 @@ void onInit( CBlob@ this )
 	this.addCommandID(camera_sync_cmd);
 	this.addCommandID("cycle");
 	this.set_u16(SHIP_STAY_ID, 0);
-
-	
-
-//	Blob3D@ blob3d = Blob3D(this, Vec3f(this.getPosition().x, 0, this.getPosition().y), 6, 2.0f);
-//	if ( blob3d !is null )
-//	{
-//		@blob3d.shape = BoundingBox( Vec3f(-3.3, -0.0, -3.3), Vec3f(3.3, 18.0, 3.3));
-//		@blob3d.rb = RigidBody();
-//		//blob3d.shape.ownerBlob = blob3d;
-//		//blob3d.shape.SetStatic(false);
-//		blob3d.shape.setPosition(Vec3f(this.getPosition().x, 0, this.getPosition().y));
-//
-//		blob3d.mesh.LoadObjIntoMesh("buckeneer.obj");
-//		blob3d.mesh.SetHardwareMapping(SMesh::STATIC);//DYNAMIC?	
-//		SMaterial@ meshMaterial = blob3d.mesh.GetMaterial();
-//		meshMaterial.SetFlag(SMaterial::LIGHTING, false);
-//		blob3d.mesh.BuildMesh();
-//
-//		blob3d.rb.Init(@blob3d);
-//		blob3d.shape.Init(@blob3d);
-//		this.set("blob3d", @blob3d);
-//	}
+	this.set_Vec2f(SHIP_STAY_POS, this.getPosition());
+	this.set_f32(SHIP_STAY_Y, 0.0f);
+	this.set_f32(SHIP_STAY_ANGLE, 0.0f);
 
 	if ( getNet().isClient() )
 	{
@@ -217,9 +207,10 @@ void onInit( CBlob@ this )
 	this.set_u32("punch time", 0);
 	this.set_u32("groundTouch time", 0);
 	this.set_bool( "onGround", true );//for syncing
-	this.set_Vec2f(SHIP_STAY_POS, this.getPosition());
-	this.set_f32(SHIP_STAY_Y, 0.0f);
-	this.set_f32(SHIP_STAY_ANGLE, 0.0f);
+	this.set_Vec2f(HUMAN_3D_NET_POS, this.getPosition());
+	this.set_Vec2f(HUMAN_3D_NET_OLD_POS, this.getPosition());
+	this.set_f32(HUMAN_3D_NET_Y, HUMAN_3D_SPAWN_Y);
+	this.set_f32(HUMAN_3D_NET_OLD_Y, HUMAN_3D_SPAWN_Y);
 	this.getShape().getVars().onground = true;
 	directionalSoundPlay( "Respawn", this.getInterpolatedPosition(), 2.5f );
 
@@ -228,6 +219,8 @@ void onInit( CBlob@ this )
 	{
 		Texture::createFromFile("pixel", "pixel.png");
 	}
+
+	EnsureHumanBlob3D(this);
 }
 
 Vec3f myPos(CBlob@ this)
@@ -236,6 +229,192 @@ Vec3f myPos(CBlob@ this)
 	f32 y =	this.get_f32("pos_y");
 	f32 z =	this.get_f32("pos_z");
 	return Vec3f(x,y,z);
+}
+
+Vec3f GetHumanBlob3DSpawnPosition(CBlob@ this)
+{
+	Vec2f pos = this.getPosition();
+	return Vec3f(pos.x, HUMAN_3D_SPAWN_Y, pos.y);
+}
+
+void RefreshHumanBlob3DOwner(CBlob@ this, Blob3D@ blob3d)
+{
+	if (this is null || blob3d is null)
+	{
+		return;
+	}
+
+	@blob3d.ownerBlob = this;
+	blob3d.setPlayer(this.getPlayer());
+}
+
+Blob3D@ EnsureHumanBlob3D(CBlob@ this)
+{
+	if (this is null)
+	{
+		return null;
+	}
+
+	Blob3D@ blob3d;
+	if (this.get("blob3d", @blob3d) && blob3d !is null)
+	{
+		RefreshHumanBlob3DOwner(this, blob3d);
+		return @blob3d;
+	}
+
+	if (!getNet().isClient())
+	{
+		return null;
+	}
+
+	CPlayer@ player = this.getPlayer();
+	if (player is null)
+	{
+		return null;
+	}
+
+	Vec3f spawnPosition = GetHumanBlob3DSpawnPosition(this);
+	BoundingShape@ shape = BoundingCapsule(3.3f, 20.0f, spawnPosition);
+	RigidBody@ rigidBody = RigidBody();
+	Blob3D newBlob3D(this, player, spawnPosition, HUMAN_3D_TEAM, 2.0f, @shape, @rigidBody);
+	if (newBlob3D !is null)
+	{
+		newBlob3D.transform.Orientation.x = this.get_f32("dir_x");
+		newBlob3D.transform.Orientation.y = this.get_f32("dir_y");
+		newBlob3D.shape.setPosition(spawnPosition);
+		const bool simulateLocally = this.isMyPlayer();
+		newBlob3D.rb.UseGravity = simulateLocally;
+		newBlob3D.rb.GravityScale = 1.0f;
+		if (simulateLocally)
+		{
+			newBlob3D.rb.Init(@newBlob3D);
+			newBlob3D.shape.Init(@newBlob3D);
+		}
+		else
+		{
+			@newBlob3D.rb.parent = @newBlob3D;
+			newBlob3D.shape.setCollides(false);
+		}
+		this.set("blob3d", @newBlob3D);
+	}
+
+	return @newBlob3D;
+}
+
+void PublishHumanCameraState(CBlob@ this, Blob3D@ blob3d)
+{
+	if (this is null || blob3d is null)
+	{
+		return;
+	}
+
+	this.set_f32("dir_x", blob3d.transform.Orientation.x);
+	this.set_f32("dir_y", blob3d.transform.Orientation.y);
+}
+
+void ApplyHumanCameraStateToBlob3D(CBlob@ this)
+{
+	if (this is null)
+	{
+		return;
+	}
+
+	Blob3D@ blob3d;
+	if (!this.get("blob3d", @blob3d) || blob3d is null)
+	{
+		return;
+	}
+
+	blob3d.transform.Orientation.x = this.get_f32("dir_x");
+	blob3d.transform.Orientation.y = this.get_f32("dir_y");
+	blob3d.transform.Orientation.z = 0.0f;
+
+	if (blob3d.shape !is null)
+	{
+		blob3d.shape.transform.Orientation.x = blob3d.transform.Orientation.x;
+		blob3d.shape.transform.Orientation.y = 0.0f;
+		blob3d.shape.transform.Orientation.z = 0.0f;
+	}
+}
+
+void UpdateRemoteHumanNetworkState(CBlob@ this, Blob3D@ blob3d)
+{
+	if (!getNet().isClient() || this is null || blob3d is null || this.isMyPlayer() || this.isAttached())
+	{
+		return;
+	}
+
+	Vec2f replicatedPos = this.getPosition();
+	f32 replicatedY = blob3d.getPosition().y;
+	const f32 amount = Maths::Clamp01(getRules().get_f32("interFrameTime"));
+	if (this.exists(HUMAN_3D_NET_POS))
+	{
+		Vec2f oldPos = this.exists(HUMAN_3D_NET_OLD_POS) ? this.get_Vec2f(HUMAN_3D_NET_OLD_POS) : this.get_Vec2f(HUMAN_3D_NET_POS);
+		Vec2f pos = this.get_Vec2f(HUMAN_3D_NET_POS);
+		replicatedPos = Vec2f(Maths::Lerp(oldPos.x, pos.x, amount), Maths::Lerp(oldPos.y, pos.y, amount));
+	}
+	if (this.exists(HUMAN_3D_NET_Y))
+	{
+		const f32 oldY = this.exists(HUMAN_3D_NET_OLD_Y) ? this.get_f32(HUMAN_3D_NET_OLD_Y) : this.get_f32(HUMAN_3D_NET_Y);
+		replicatedY = Maths::Lerp(oldY, this.get_f32(HUMAN_3D_NET_Y), amount);
+	}
+
+	Vec3f position(replicatedPos.x, replicatedY, replicatedPos.y);
+	blob3d.setPosition(position);
+	if (blob3d.shape !is null)
+	{
+		blob3d.shape.setPosition(position);
+		const f32 waterSurfaceY = GetOceanWaterHeight(position);
+		blob3d.shape.inWater = waterSurfaceY - position.y >= -HUMAN_3D_WATER_EXIT_HEIGHT;
+		blob3d.shape.onGround = this.get_bool("onGround");
+	}
+
+	blob3d.transform.Orientation.x = this.get_f32("dir_x");
+	blob3d.transform.Orientation.y = this.get_f32("dir_y");
+	blob3d.transform.Orientation.z = 0.0f;
+
+	if (blob3d.shape !is null)
+	{
+		blob3d.shape.transform.Orientation.x = blob3d.transform.Orientation.x;
+		blob3d.shape.transform.Orientation.y = 0.0f;
+		blob3d.shape.transform.Orientation.z = 0.0f;
+	}
+}
+
+void ReconcileLocalHumanNetworkState(CBlob@ this, Blob3D@ blob3d)
+{
+	if (!getNet().isClient() || getNet().isServer() || this is null || blob3d is null || !this.isMyPlayer() || this.isAttached())
+	{
+		return;
+	}
+
+	if (!this.exists(HUMAN_3D_NET_POS) || !this.exists(HUMAN_3D_NET_Y))
+	{
+		return;
+	}
+
+	Vec2f serverXZ = this.get_Vec2f(HUMAN_3D_NET_POS);
+	Vec3f serverPos(serverXZ.x, this.get_f32(HUMAN_3D_NET_Y), serverXZ.y);
+	Vec3f delta = serverPos - blob3d.getPosition();
+	if (delta.LengthSquared() < HUMAN_3D_OWNER_CORRECTION_SNAP * HUMAN_3D_OWNER_CORRECTION_SNAP)
+	{
+		return;
+	}
+
+	blob3d.setPosition(serverPos);
+	if (blob3d.shape !is null)
+	{
+		blob3d.shape.setPosition(serverPos);
+		blob3d.shape.onGround = this.get_bool("onGround");
+	}
+	if (blob3d.rb !is null)
+	{
+		blob3d.rb.setVelocity(Vec3f());
+		blob3d.rb.pendingPositionCorrection = Vec3f();
+		blob3d.rb.pendingVelocityDisplacement = Vec3f();
+		blob3d.rb.pendingVelocityCorrection = Vec3f();
+	}
+	this.setPosition(serverXZ);
 }
 
 void EnsureHumanShape(Blob3D@ blob3d)
@@ -524,10 +703,19 @@ void ApplyShipStayMotion(CBlob@ this, Blob3D@ blob3d, CBlob@ shipBlob)
 
 void onTick( CBlob@ this )
 {	
-	Blob3D@ blob3d;
-	if (!this.get("blob3d", @blob3d)) { return; }
+	Blob3D@ blob3d = EnsureHumanBlob3D(this);
+	if (blob3d is null) { return; }
 
 	EnsureHumanShape(blob3d);
+	UpdateRemoteHumanNetworkState(this, blob3d);
+	ReconcileLocalHumanNetworkState(this, blob3d);
+
+	const bool remoteClient = getNet().isClient() && !getNet().isServer() && !this.isMyPlayer();
+	if (remoteClient && !this.isAttached())
+	{
+		return;
+	}
+
 	UpdateAttachedAim(this, blob3d);
 	UpdateAttachedSeatTransform(this, blob3d);
 	UpdateHumanSeatCollision(this, blob3d);
@@ -544,8 +732,34 @@ void onTick( CBlob@ this )
 
 	u32 gameTime = getGameTime();
 
+	if (getNet().isServer())
+	{
+		Vec2f pos = blob3d.getPosition().xz();
+		Vec2f oldPos = this.exists(HUMAN_3D_NET_POS) ? this.get_Vec2f(HUMAN_3D_NET_POS) : pos;
+		const f32 oldY = this.exists(HUMAN_3D_NET_Y) ? this.get_f32(HUMAN_3D_NET_Y) : blob3d.getPosition().y;
+		this.set_Vec2f(HUMAN_3D_NET_OLD_POS, oldPos);
+		this.set_Vec2f(HUMAN_3D_NET_POS, pos);
+		this.set_f32(HUMAN_3D_NET_OLD_Y, oldY);
+		this.set_f32(HUMAN_3D_NET_Y, blob3d.getPosition().y);
+		if (gameTime % HUMAN_3D_SYNC_RATE == 0)
+		{
+			this.Sync(HUMAN_3D_NET_OLD_POS, true);
+			this.Sync(HUMAN_3D_NET_POS, true);
+			this.Sync(HUMAN_3D_NET_OLD_Y, true);
+			this.Sync(HUMAN_3D_NET_Y, true);
+			this.set_bool( "onGround", IsHumanGrounded(this, blob3d) );
+			this.Sync( "onGround", true );
+		}
+	}
+
 	if (this.isMyPlayer())
 	{
+		PublishHumanCameraState(this, blob3d);
+		if (gameTime % HUMAN_3D_SYNC_RATE == 0)
+		{
+			SyncCamera(this);
+		}
+
 		PlayerControls( this );
 
 		if ( gameTime % 10 == 0 )
@@ -951,7 +1165,12 @@ void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
 {
 	if (cmd == this.getCommandID(camera_sync_cmd))
 	{
-		HandleCamera(this, params, !canSend(this));
+		const bool apply = !canSend(this);
+		HandleCamera(this, params, apply);
+		if (apply)
+		{
+			ApplyHumanCameraStateToBlob3D(this);
+		}
 	}
 
 	if (getNet().isServer() && this.getCommandID("get out") == cmd){

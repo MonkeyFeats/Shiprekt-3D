@@ -21,6 +21,7 @@ void onInit(CRules@ this)
 {	
 	Reset(this);
 	getCamera().targetDistance = 0.5f;
+	EnsureCamera3D(getLocalPlayer());
 }
 
 void onRestart(CRules@ this)
@@ -43,11 +44,29 @@ void Reset(CRules@ this)
 
 void onNewPlayerJoin(CRules@ this, CPlayer@ player)
 {
-	Camera3D camera();
-	if ( camera !is null )
+	EnsureCamera3D(player);
+}
+
+Camera3D@ EnsureCamera3D(CPlayer@ player)
+{
+	if (player is null)
 	{
-		player.set("Camera3D", @camera);
+		return null;
 	}
+
+	Camera3D@ camera;
+	if (player.get("Camera3D", @camera) && camera !is null)
+	{
+		return @camera;
+	}
+
+	Camera3D newCamera();
+	if (newCamera !is null)
+	{
+		player.set("Camera3D", @newCamera);
+	}
+
+	return @newCamera;
 }
 
 void onSetPlayer(CRules@ this, CBlob@ blob, CPlayer@ player)
@@ -71,7 +90,7 @@ void onTick(CRules@ this)
 	CPlayer@ player = getLocalPlayer();
 	if(player !is null)
 	{
-		Camera3D@ camera; player.get("Camera3D", @camera);
+		Camera3D@ camera = EnsureCamera3D(player);
 		if (camera !is null)
 		{
 			if (getLocalPlayerBlob() !is null)
@@ -500,7 +519,16 @@ void FollowTarget(CRules@ this, CBlob@ lp)
 
 		CBlob@ localBlob = getLocalPlayerBlob();
 		Blob3D@ blob3d;
-		if (localBlob is null || !localBlob.get("blob3d", @blob3d)) { return; }
+		if (localBlob is null) { return; }
+		if (!localBlob.get("blob3d", @blob3d) || blob3d is null)
+		{
+			Vec2f fallbackPos = localBlob.getInterpolatedPosition();
+			Vec3f fallbackDir(localBlob.get_f32("dir_x"), localBlob.get_f32("dir_y"), 0.0f);
+			camera.setTarget(null);
+			camera.setPosition(Vec3f(fallbackPos.x, FIRST_PERSON_EYE_HEIGHT, fallbackPos.y));
+			camera.setRotation(fallbackDir);
+			return;
+		}
 
 		const bool firstPersonCamera = IsFirstPersonCameraEnabled(this) && localBlob.getName() != "shark";
 		if (firstPersonCamera && !localBlob.isAttached())

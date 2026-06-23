@@ -64,6 +64,7 @@ void SyncCamera(CBlob@ this)
 {
 	CBitStream bt;
 	bt.write_f32(this.get_f32("dir_x"));	
+	bt.write_f32(this.get_f32("dir_y"));
 	uint8 cmnd = this.getCommandID(camera_sync_cmd);
 	this.SendCommand(cmnd, bt);
 }
@@ -81,6 +82,12 @@ void HandleCamera(CBlob@ this, CBitStream@ bt, bool apply)
 	dirX = 360;
 
 	this.set_f32("dir_x", dirX);
+
+	float dirY;
+	if (bt.saferead_f32(dirY))
+	{
+		this.set_f32("dir_y", Maths::Clamp(dirY, -90, 90));
+	}
 }
 
 void BuildToolsMenu( CBlob@ this, string description, Vec2f offset )

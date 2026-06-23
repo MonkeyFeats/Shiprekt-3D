@@ -91,14 +91,51 @@ shared class Camera3D
 	
 	void render_update()
 	{
+		updateSharkCamera();
 		updateViewMatrix();
+	}
+
+	void updateSharkCamera()
+	{
+		if (this.targetBlob is null || this.targetBlob.ownerBlob is null || this.targetBlob.ownerBlob.getName() != "shark")
+			return;
+
+		CBlob@ shark = this.targetBlob.ownerBlob;
+		f32 amount = Maths::Clamp01(getRules().get_f32("interFrameTime"));
+		f32 dirDelta = shark.get_f32("dir_x") - shark.get_f32("old_dir_x");
+		while (dirDelta > 180.0f) dirDelta -= 360.0f;
+		while (dirDelta < -180.0f) dirDelta += 360.0f;
+
+		Vec3f dir;
+		dir.x = -(shark.get_f32("old_dir_x") + dirDelta * amount);
+		dir.y = Maths::Lerp(shark.get_f32("old_dir_y"), shark.get_f32("dir_y"), amount);
+		dir.z = 0.0f;
+
+		Vec3f off = pos_offset;
+		off.yzRotateBy(dir.y);
+		off.xzRotateBy(dir.x);
+
+		Vec2f sharkPosition = shark.getInterpolatedPosition();
+		f32 sharkY = Maths::Lerp(shark.get_f32("old_shark_y"), shark.get_f32("shark_y"), amount);
+		this.setPosition(Vec3f(sharkPosition.x, sharkY, sharkPosition.y) + off);
+		this.setRotation(-dir);
 	}
 
 	void updateViewMatrix()
 	{
 		if (this.targetBlob !is null)
 		{
-			view.CreateLookAt(this.getPosition(), this.targetBlob.getRenderPosition()+Vec3f(0,pos_offset.y,0), Vec3f(0,1,0));
+			if (this.targetBlob.ownerBlob !is null && this.targetBlob.ownerBlob.getName() == "shark")
+			{
+				CBlob@ shark = this.targetBlob.ownerBlob;
+				Vec2f sharkPosition = shark.getInterpolatedPosition();
+				f32 sharkY = Maths::Lerp(shark.get_f32("old_shark_y"), shark.get_f32("shark_y"), Maths::Clamp01(getRules().get_f32("interFrameTime")));
+				view.CreateLookAt(this.getPosition(), Vec3f(sharkPosition.x, sharkY + pos_offset.y, sharkPosition.y), Vec3f(0,1,0));
+			}
+			else
+			{
+				view.CreateLookAt(this.getPosition(), this.targetBlob.getRenderPosition()+Vec3f(0,pos_offset.y,0), Vec3f(0,1,0));
+			}
 		}
 		else
 		{

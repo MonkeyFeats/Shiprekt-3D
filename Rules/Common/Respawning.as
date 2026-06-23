@@ -274,6 +274,22 @@ bool isRespawnAdded( CRules@ this, const string username )
 	return false;
 }
 
+void removeRespawn( CRules@ this, const string username )
+{
+	Respawn[]@ respawns;
+	if (this.get("respawns", @respawns))
+	{
+		for (int i = int(respawns.length) - 1; i >= 0; i--)
+		{
+			Respawn@ r = respawns[i];
+			if (r.username == username)
+			{
+				respawns.erase(i);
+			}
+		}
+	}
+}
+
 Vec2f getSpawnPosition( const uint team )
 {
     Vec2f[] spawns;			 
@@ -287,7 +303,12 @@ Vec2f getSpawnPosition( const uint team )
 
 CBlob@ SpawnAsShark( CRules@ this, CPlayer@ player )
 {
-    CBlob @shark = server_CreateBlob( "shark", this.getSpectatorTeamNum(), getSpawnPosition( player.getTeamNum() ) );
+    return SpawnAsShark( this, player, getSpawnPosition( player.getTeamNum() ) );
+}
+
+CBlob@ SpawnAsShark( CRules@ this, CPlayer@ player, Vec2f position )
+{
+    CBlob @shark = server_CreateBlob( "shark", this.getSpectatorTeamNum(), position );
     if (shark !is null) {
         shark.server_SetPlayer( player );
     }
@@ -297,23 +318,35 @@ CBlob@ SpawnAsShark( CRules@ this, CPlayer@ player )
 void onPlayerRequestTeamChange( CRules@ this, CPlayer@ player, u8 newteam )
 {
     CBlob@ blob = player.getBlob();
-	if (blob !is null)
-        blob.server_Die();
 	
 	if ( newteam == 44 )//request from Block.as
 		return;
-		
-	if ( player.isMod() )
+
+	if (newteam == this.getSpectatorTeamNum())
 	{
+		removeRespawn( this, player.getUsername() );
+
+		Vec2f spawnPosition = blob !is null ? blob.getPosition() : getSpawnPosition( player.getTeamNum() );
+		if (blob !is null)
+		{
+			blob.server_SetPlayer( null );
+			blob.server_Die();
+		}
+
 		player.server_setTeamNum( newteam );
-		if ( newteam != this.getSpectatorTeamNum())
-			onPlayerRequestSpawn( this, player );
+		SpawnAsShark( this, player, spawnPosition );
 	}
-	else if (newteam == this.getSpectatorTeamNum())
-   {
-       if (blob !is null && blob.getName() == "human")
-           SpawnAsShark( this, player);
-   }
+	else if ( player.isMod() )
+	{
+		if (blob !is null)
+		{
+			blob.server_SetPlayer( null );
+			blob.server_Die();
+		}
+
+		player.server_setTeamNum( newteam );
+		onPlayerRequestSpawn( this, player );
+	}
 }
 
 bool allPlayersInOneTeam( CRules@ this )

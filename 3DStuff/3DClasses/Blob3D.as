@@ -337,6 +337,10 @@ shared class Blob3D
             return;
 
         Vec3f offset = LocalTransform.Position;
+        if (Parent.ownerBlob !is null && Parent.ownerBlob.getName() == "shark")
+        {
+            offset.yzRotateBy(Parent.transform.Orientation.y);
+        }
         offset.xzRotateBy(Parent.transform.Orientation.x);
 
         transform.Position = Parent.transform.Position + offset;
@@ -408,7 +412,35 @@ shared class Blob3D
             Vec2f blobPosition = ownerBlob.getInterpolatedPosition();
             transform.Position.x = blobPosition.x;
             transform.Position.z = blobPosition.y;
-            transform.Orientation.x = ownerBlob.getAngleDegrees();
+            if (ownerBlob.getName() == "shark")
+            {
+                f32 amount = Maths::Clamp01(getRules().get_f32("interFrameTime"));
+                f32 yawDelta = ownerBlob.get_f32("shark_yaw") - ownerBlob.get_f32("old_shark_yaw");
+                while (yawDelta > 180.0f) yawDelta -= 360.0f;
+                while (yawDelta < -180.0f) yawDelta += 360.0f;
+                f32 tailYawDelta = ownerBlob.get_f32("shark_tail_yaw") - ownerBlob.get_f32("old_shark_tail_yaw");
+                while (tailYawDelta > 180.0f) tailYawDelta -= 360.0f;
+                while (tailYawDelta < -180.0f) tailYawDelta += 360.0f;
+                transform.Position.y = Maths::Lerp(ownerBlob.get_f32("old_shark_y"), ownerBlob.get_f32("shark_y"), amount);
+                transform.Orientation.x = ownerBlob.get_f32("old_shark_yaw") + yawDelta * amount;
+                transform.Orientation.y = Maths::Lerp(ownerBlob.get_f32("old_shark_pitch"), ownerBlob.get_f32("shark_pitch"), amount);
+                for (uint i = 0; i < Children.length(); i++)
+                {
+                    Blob3D@ child = Children[i];
+                    if (child !is null)
+                    {
+                        child.LocalTransform.Orientation.y = transform.Orientation.y;
+                        if (child.Name == "shark_tail")
+                        {
+                            child.LocalTransform.Orientation.x = ownerBlob.get_f32("old_shark_tail_yaw") + tailYawDelta * amount;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                transform.Orientation.x = ownerBlob.getAngleDegrees();
+            }
         }
 
         if (HasMesh && mesh !is null)

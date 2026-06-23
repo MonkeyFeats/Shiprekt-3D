@@ -113,7 +113,7 @@ void onTick(CRules@ this)
 //change to spectator cam on team change
 void onPlayerChangedTeam(CRules@ this, CPlayer@ player, u8 oldteam, u8 newteam)
 {
-	CBlob@ playerBlob = player is null ? player.getBlob() : null;
+	CBlob@ playerBlob = player is null ? null : player.getBlob();
 	if (newteam == this.getSpectatorTeamNum() && getLocalPlayer() is player)
 	{
 		if (playerBlob !is null)
@@ -225,8 +225,11 @@ void onRender(CRules@ this)
 			Vec3f pos = blob3d.getPosition();
 			GUI::DrawText("Pos = "+pos.toString(), Vec2f(0, 16), color_white);
 
-			Vec3f vel = blob3d.rb.getVelocity();
-			GUI::DrawText("Vel = "+vel.toString(), Vec2f(0, 32), color_white);
+			if (blob3d.rb !is null)
+			{
+				Vec3f vel = blob3d.rb.getVelocity();
+				GUI::DrawText("Vel = "+vel.toString(), Vec2f(0, 32), color_white);
+			}
 	    }	
 
 		if (targetPlayer() !is null)
@@ -499,7 +502,7 @@ void FollowTarget(CRules@ this, CBlob@ lp)
 		Blob3D@ blob3d;
 		if (localBlob is null || !localBlob.get("blob3d", @blob3d)) { return; }
 
-		const bool firstPersonCamera = IsFirstPersonCameraEnabled(this);
+		const bool firstPersonCamera = IsFirstPersonCameraEnabled(this) && localBlob.getName() != "shark";
 		if (firstPersonCamera && !localBlob.isAttached())
 		{
 			camera.setTarget(null);
@@ -525,9 +528,18 @@ void FollowTarget(CRules@ this, CBlob@ lp)
 			return;
 		}
 
-		camera.pos_offset = Vec3f(THIRD_PERSON_SEAT_OFFSET_X, THIRD_PERSON_SEAT_OFFSET_Y, THIRD_PERSON_SEAT_OFFSET_Z);
+		const bool sharkCamera = localBlob.getName() == "shark";
+		camera.pos_offset = sharkCamera ? Vec3f(0.0f, 28.0f, -86.0f) : Vec3f(THIRD_PERSON_SEAT_OFFSET_X, THIRD_PERSON_SEAT_OFFSET_Y, THIRD_PERSON_SEAT_OFFSET_Z);
 	    Blob3D@ targetblob3D = camera.getTarget();
-		if (targetblob3D is null)
+		if (sharkCamera)
+		{
+			if (targetblob3D !is blob3d)
+			{
+				camera.setTarget(@blob3d);
+			}
+			@targetblob3D = blob3d;
+		}
+		else if (targetblob3D is null)
 		{
 			camera.setTarget(@blob3d);
 			@targetblob3D = blob3d;
@@ -537,6 +549,12 @@ void FollowTarget(CRules@ this, CBlob@ lp)
 	    {
 			Vec3f off = camera.pos_offset;
 			Vec3f dir = targetblob3D.transform.Orientation.getXYZ();
+			if (sharkCamera)
+			{
+				dir.x = -localBlob.get_f32("dir_x");
+				dir.y = localBlob.get_f32("dir_y");
+				dir.z = 0.0f;
+			}
 			camera.setRotation(-dir);
 			off.yzRotateBy(dir.y);
 			off.xzRotateBy(dir.x);
@@ -555,9 +573,16 @@ void FollowTarget(CRules@ this, CBlob@ lp)
 				{ controls.setMousePosition(Vec2f_lerp(controls.getMouseScreenPos(), ScrMid, 0.75)); }	
 			}	
 
-			Vec3f desiredPos = targetblob3D.getRenderPosition() + off;
+			Vec3f targetPosition = targetblob3D.getRenderPosition();
+			if (sharkCamera)
+			{
+				Vec2f sharkPosition = localBlob.getInterpolatedPosition();
+				f32 sharkY = Maths::Lerp(localBlob.get_f32("old_shark_y"), localBlob.get_f32("shark_y"), getRules().get_f32("interFrameTime"));
+				targetPosition = Vec3f(sharkPosition.x, sharkY, sharkPosition.y);
+			}
+			Vec3f desiredPos = targetPosition + off;
 			Vec3f currentPos = camera.getPosition();
-			currentPos += (desiredPos - currentPos) * 0.15f; //lerp for smoothing
+			currentPos = sharkCamera ? desiredPos : currentPos + (desiredPos - currentPos) * 0.15f; //lerp for smoothing
 
 			camera.setPosition(currentPos);			
 		}

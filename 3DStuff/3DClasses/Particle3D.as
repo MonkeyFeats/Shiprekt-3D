@@ -1,4 +1,5 @@
 #include "Vec3f.as"
+#include "IslandsCommon.as"
 #include "OceanWave.as"
 
 const string PARTICLE_SYSTEM_3D_KEY = "particle_system_3d";
@@ -238,8 +239,8 @@ shared class ParticleSystem3D
                     }
                 }
             }
-        }        
-        
+        }
+
 
         RollAxes(right, up, particle.rotation.z);
     }

@@ -45,7 +45,7 @@ const string HUMAN_3D_NET_POS = "human 3d net pos";
 const string HUMAN_3D_NET_OLD_POS = "human 3d net old pos";
 const string HUMAN_3D_NET_Y = "human 3d net y";
 const string HUMAN_3D_NET_OLD_Y = "human 3d net old y";
-const u32 HUMAN_3D_SYNC_RATE = 2;
+const u32 HUMAN_3D_SYNC_RATE = 1;
 const f32 HUMAN_3D_SPAWN_Y = 16.0f;
 const f32 HUMAN_3D_WATER_EXIT_HEIGHT = 2.0f;
 const f32 HUMAN_3D_OWNER_CORRECTION_START = 4.0f;
@@ -189,7 +189,7 @@ void onInit( CBlob@ this )
 			this.setPosition( core.getPosition() );
 			this.set_u16( SHIP_STAY_ID, core.getNetworkID() );
 			this.set_Vec2f(SHIP_STAY_POS, core.getInterpolatedPosition());
-			this.set_f32(SHIP_STAY_Y, GetShipStayReferenceY(core));
+			this.set_f32(SHIP_STAY_Y, GetBlob3DY(core));
 			this.set_f32(SHIP_STAY_ANGLE, core.getAngleDegrees());
 			//blob3d.setPosition(V2toV3(core.getPosition()));
 
@@ -685,15 +685,25 @@ CBlob@ GetShipStayReference(CBlob@ shipBlob)
 	return shipBlob;
 }
 
-f32 GetShipStayReferenceY(CBlob@ referenceBlob)
+f32 GetBlob3DY(CBlob@ blob)
 {
-	Blob3D@ reference3d;
-	if (referenceBlob !is null && referenceBlob.get("blob3d", @reference3d) && reference3d !is null)
+	Blob3D@ blob3d;
+	if (blob !is null && blob.get("blob3d", @blob3d) && blob3d !is null)
 	{
-		return reference3d.getPosition().y;
+		return blob3d.transform.Position.y;
 	}
 
 	return 0.0f;
+}
+
+f32 GetShipStaySurfaceY(CBlob@ shipBlob, CBlob@ referenceBlob)
+{
+	if (shipBlob !is null)
+	{
+		return GetBlob3DY(shipBlob);
+	}
+
+	return GetBlob3DY(referenceBlob);
 }
 
 void CacheShipStayTransform(CBlob@ this, CBlob@ shipBlob)
@@ -706,7 +716,7 @@ void CacheShipStayTransform(CBlob@ this, CBlob@ shipBlob)
 
 	this.set_u16(SHIP_STAY_ID, referenceBlob.getNetworkID());
 	this.set_Vec2f(SHIP_STAY_POS, referenceBlob.getInterpolatedPosition());
-	this.set_f32(SHIP_STAY_Y, GetShipStayReferenceY(referenceBlob));
+	this.set_f32(SHIP_STAY_Y, GetShipStaySurfaceY(shipBlob, referenceBlob));
 	this.set_f32(SHIP_STAY_ANGLE, referenceBlob.getAngleDegrees());
 }
 
@@ -727,7 +737,7 @@ void ApplyShipStayMotion(CBlob@ this, Blob3D@ blob3d, CBlob@ shipBlob)
 	Vec2f oldShipPos = this.get_Vec2f(SHIP_STAY_POS);
 	Vec2f newShipPos = referenceBlob.getInterpolatedPosition();
 	f32 oldShipY = this.get_f32(SHIP_STAY_Y);
-	f32 newShipY = GetShipStayReferenceY(referenceBlob);
+	f32 newShipY = GetShipStaySurfaceY(shipBlob, referenceBlob);
 	f32 oldShipAngle = this.get_f32(SHIP_STAY_ANGLE);
 	f32 newShipAngle = referenceBlob.getAngleDegrees();
 
@@ -876,7 +886,7 @@ void Update( CBlob@ this )
 		}			
 
 		// artificial stay on ship
-		if ( myPlayer )
+		if ( getNet().isServer() || myPlayer )
 		{
 			CBlob@ islandBlob = getIslandBlob( this );
 			if (solidGround && islandBlob !is null)

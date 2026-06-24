@@ -137,14 +137,11 @@ shared class PhysicsWorld
 		blob.set_f32("human 3d net y", position.y);
 		blob.set_bool("onGround", blob3d.shape !is null && blob3d.shape.onGround);
 
-		if (getGameTime() % 2 == 0)
-		{
-			blob.Sync("human 3d net old pos", true);
-			blob.Sync("human 3d net pos", true);
-			blob.Sync("human 3d net old y", true);
-			blob.Sync("human 3d net y", true);
-			blob.Sync("onGround", true);
-		}
+		blob.Sync("human 3d net old pos", true);
+		blob.Sync("human 3d net pos", true);
+		blob.Sync("human 3d net old y", true);
+		blob.Sync("human 3d net y", true);
+		blob.Sync("onGround", true);
 	}
 
 	bool GetCollisionMtv(BoundingShape@ a, BoundingShape@ b, RigidBody@ bodyA, Vec3f &out mtv, Vec3f &out normal)
@@ -220,6 +217,9 @@ bool SolveCollisionsAndApply(float dt, bool &out foundAny)
 						accumulatedNormal += normal;
 						accumulatedRestitution += (a.Elasticity + otherBlob.shape.Elasticity) * 0.5f;
 						collisionCount++;
+						MarkShapeGroundedFromCollision(bodyA, normal);
+						ApplyContactPlatformMotion(bodyA, otherBlob, normal);
+						CalculateImpulse(bodyA, normal, (a.Elasticity + otherBlob.shape.Elasticity) * 0.5f, false);
 					}
 
 					ResolvePairPosition(a, otherBlob.shape, bodyA, bodyB, mtv);
@@ -245,6 +245,9 @@ bool SolveCollisionsAndApply(float dt, bool &out foundAny)
 							accumulatedNormal += normal;
 							accumulatedRestitution += (a.Elasticity + extraShape.Elasticity) * 0.5f;
 							collisionCount++;
+							MarkShapeGroundedFromCollision(bodyA, normal);
+							ApplyContactPlatformMotion(bodyA, otherBlob, normal);
+							CalculateImpulse(bodyA, normal, (a.Elasticity + extraShape.Elasticity) * 0.5f, false);
 						}
 
 						ResolvePairPosition(a, extraShape, bodyA, null, mtv);
@@ -256,7 +259,6 @@ bool SolveCollisionsAndApply(float dt, bool &out foundAny)
 			{
 				accumulatedNormal = accumulatedNormal.Normalize();
 				MarkShapeGroundedFromCollision(bodyA, accumulatedNormal);
-				CalculateImpulse(bodyA, accumulatedNormal, accumulatedRestitution / collisionCount, false);
 			}
 		}
 	}
@@ -410,6 +412,13 @@ bool SolveCollisionsAndApply(float dt, bool &out foundAny)
 	    if (vn >= 0.0f)
 	        return;
 
+	    if (Maths::Abs(vn) < COLLISION_REST_NORMAL_VELOCITY)
+	    {
+	        vel -= normal * vn;
+	        body.setSolvedVelocity(vel);
+	        return;
+	    }
+
 	    restitution = Maths::Clamp(restitution, 0.0f, 1.0f);
 	    vel -= normal * ((1.0f + restitution) * vn);
 
@@ -434,6 +443,30 @@ bool SolveCollisionsAndApply(float dt, bool &out foundAny)
 		{
 			body.parent.shape.onGround = true;
 		}
+	}
+
+	void ApplyContactPlatformMotion(RigidBody@ body, Blob3D@ platformBlob, Vec3f normal)
+	{
+		if (body is null || body.parent is null || body.parent.ownerBlob is null || platformBlob is null || platformBlob.ownerBlob is null)
+			return;
+
+		if (normal.y <= COLLISION_GROUND_NORMAL_Y)
+			return;
+
+		CBlob@ bodyBlob = body.parent.ownerBlob;
+		const u32 gameTime = getGameTime();
+		if (bodyBlob.get_u32("platform follow tick") == gameTime)
+			return;
+
+		CBlob@ platformCBlob = platformBlob.ownerBlob;
+		const f32 dx = platformCBlob.get_f32("platform 3d delta x");
+		const f32 dy = platformCBlob.get_f32("platform 3d delta y");
+		const f32 dz = platformCBlob.get_f32("platform 3d delta z");
+		if (Maths::Abs(dx) + Maths::Abs(dy) + Maths::Abs(dz) <= 0.000001f)
+			return;
+
+		body.pendingPositionCorrection += Vec3f(dx, dy, dz);
+		bodyBlob.set_u32("platform follow tick", gameTime);
 	}
 
 

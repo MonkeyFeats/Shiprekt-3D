@@ -48,6 +48,7 @@ void onInit(CRules@ this)
 		tool = Tool();
 	
 	this.addCommandID(sync_id);
+	RegisterParticle3DNetworkCommands(this);
 
 	SkyMesh.LoadObjIntoMesh("skydome.obj");
 	SkyMesh.SetHardwareMapping(SMesh::STATIC);	
@@ -1092,6 +1093,12 @@ void onNewPlayerJoin(CRules@ this, CPlayer@ player)
 
 void onCommand(CRules@ this, u8 cmd, CBitStream@ params)
 {		
+	if (cmd == this.getCommandID(PARTICLE_3D_EVENT_CMD))
+	{
+		HandleParticle3DEventCommand(this, params);
+		return;
+	}
+
 	if (cmd == this.getCommandID(sync_id))
 	{	
 		u16 id = params.read_u16();

@@ -106,9 +106,10 @@ void onTick(CMovement@ this)
 	const bool atWaterSurface = inwater && waterDepth >= -HUMAN_WATER_SURFACE_DEADBAND && waterDepth <= HUMAN_WATER_JUMP_DEPTH;
 	const bool canControl = serverControls || (localControls && c !is null && d !is null && isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !block_menu && !getHUD().hasButtons() && !blob.get_bool("build menu open"));
 	const bool wasInWater = blob.get_bool(HUMAN_WAS_IN_WATER);
-	if (is_client && inwater && !wasInWater && rb.getVelocity().y < -3.5f)
+	if (inwater && !wasInWater && rb.getVelocity().y < -3.5f)
 	{
-		EmitWaterSplashParticles3D(Vec3f(Pos.x, waterSurfaceY, Pos.z), rb.getVelocity(), Maths::Clamp(Maths::Abs(rb.getVelocity().y) * 0.16f, 0.65f, 1.45f));
+		const f32 splashPower = Maths::Clamp(Maths::Abs(rb.getVelocity().y) * 0.16f, 0.65f, 1.45f);
+		EmitReplicatedParticle3DEvent(blob, Particle3DEvent::WaterSplash, Vec3f(Pos.x, waterSurfaceY, Pos.z), rb.getVelocity(), splashPower);
 	}
 	blob.set_bool(HUMAN_WAS_IN_WATER, inwater);
 
@@ -210,7 +211,7 @@ void onTick(CMovement@ this)
 			}
 			else
 			{
-				if (moveForce.Length() > 0.3f && is_client)
+				if (moveForce.Length() > 0.3f)
 				{	
 					if (time % (10) == 0)
 					{						
@@ -218,8 +219,10 @@ void onTick(CMovement@ this)
 						const bool shallowFootstep = tileType >= CMap::water_1 && tileType <= CMap::water_4;
 						if (tileType == CMap::sand || shallowFootstep)
 						{
-							EmitFootstepParticles3D(Vec3f(Pos.x, shallowFootstep ? waterSurfaceY : 0.25f, Pos.z), shallowFootstep);
+							const u8 footstepFlags = shallowFootstep ? Particle3DEventFlags::ShallowWater : u8(0);
+							EmitReplicatedParticle3DEvent(blob, Particle3DEvent::Footstep, Vec3f(Pos.x, shallowFootstep ? waterSurfaceY : 0.25f, Pos.z), Vec3f(0.0f, -0.5f, 0.0f), 0.45f, footstepFlags);
 						}
+						if (is_client)
 						{
 							blob.getSprite().PlayRandomSound("/EarthStep", 0.6f, 0.75f );
 						} 
@@ -275,7 +278,7 @@ void onTick(CMovement@ this)
 			if (atWaterSurface && rb.getVelocity().xz().LengthSquared() > 1.0f && time - blob.get_u32(HUMAN_LAST_FOOTSTEP_PARTICLE_TIME) > 12)
 			{
 				blob.set_u32(HUMAN_LAST_FOOTSTEP_PARTICLE_TIME, time);
-				EmitWakeParticles3D(Vec3f(Pos.x, waterSurfaceY, Pos.z), rb.getVelocity() * -1.0f, 0.45f);
+				EmitReplicatedParticle3DEvent(blob, Particle3DEvent::Wake, Vec3f(Pos.x, waterSurfaceY, Pos.z), rb.getVelocity() * -1.0f, 0.45f);
 			}
 //
 			if (time % 160 == 0)
@@ -290,6 +293,12 @@ void onTick(CMovement@ this)
 		else
 		{
 			blob.getSprite().SetEmitSoundPaused(true);
+		}
+
+		if (!is_client && inwater && atWaterSurface && rb.getVelocity().xz().LengthSquared() > 1.0f && time - blob.get_u32(HUMAN_LAST_FOOTSTEP_PARTICLE_TIME) > 12)
+		{
+			blob.set_u32(HUMAN_LAST_FOOTSTEP_PARTICLE_TIME, time);
+			EmitReplicatedParticle3DEvent(blob, Particle3DEvent::Wake, Vec3f(Pos.x, waterSurfaceY, Pos.z), rb.getVelocity() * -1.0f, 0.45f);
 		}
 	}
 

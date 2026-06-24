@@ -22,7 +22,6 @@ const string BULLET_3D_VEL_Y = "bullet 3d velocity y";
 const string BULLET_3D_VEL_Z = "bullet 3d velocity z";
 const string BULLET_3D_POS_Y = "bullet 3d position y";
 const string BULLET_3D_IGNORE_ID = "bullet 3d ignore id";
-const string BULLET_3D_HIT_PARTICLES_CMD = "bullet 3d hit particles";
 
 namespace BulletHitMaterial3D
 {
@@ -88,7 +87,6 @@ void onInit( CBlob@ this )
 
 	this.Tag("projectile");
 	this.Tag("bullet");
-	this.addCommandID(BULLET_3D_HIT_PARTICLES_CMD);
 
 	ShapeConsts@ consts = this.getShape().getConsts();
     consts.mapCollisions = false;
@@ -177,7 +175,7 @@ void onTick( CBlob@ this )
 			CMap@ map = getMap();
 			if (map !is null && (newVelocity - oldVelocity).LengthSquared() > 9.0f && IsBulletRockTile(map.getTile(blob3d.getPosition().xz()).type))
 			{
-				SendBullet3DHitParticles(this, null, blob3d.getPosition(), oldVelocity, BulletHitMaterial3D::Rock);
+				SendBullet3DHitParticles(this, blob3d.getPosition(), oldVelocity, BulletHitMaterial3D::Rock);
 				this.server_Die();
 				return;
 			}
@@ -261,7 +259,7 @@ bool HandleBullet3DWorldImpact(CBlob@ this, Vec3f position, Vec3f velocity)
 	const u16 tileType = map.getTile(position.xz()).type;
 	if (IsBulletWaterTile(tileType) && position.y <= GetOceanWaterHeight(position) + 1.0f)
 	{
-		SendBullet3DHitParticles(this, null, Vec3f(position.x, GetOceanWaterHeight(position), position.z), velocity, BulletHitMaterial3D::Water);
+		SendBullet3DHitParticles(this, Vec3f(position.x, GetOceanWaterHeight(position), position.z), velocity, BulletHitMaterial3D::Water);
 		this.server_Die();
 		return true;
 	}
@@ -271,14 +269,14 @@ bool HandleBullet3DWorldImpact(CBlob@ this, Vec3f position, Vec3f velocity)
 
 	if (IsBulletSandTile(tileType))
 	{
-		SendBullet3DHitParticles(this, null, Vec3f(position.x, 0.2f, position.z), velocity, BulletHitMaterial3D::Sand);
+		SendBullet3DHitParticles(this, Vec3f(position.x, 0.2f, position.z), velocity, BulletHitMaterial3D::Sand);
 		this.server_Die();
 		return true;
 	}
 
 	if (IsBulletRockTile(tileType) && position.y <= 64.0f)
 	{
-		SendBullet3DHitParticles(this, null, Vec3f(position.x, Maths::Max(position.y, 3.0f), position.z), velocity, BulletHitMaterial3D::Rock);
+		SendBullet3DHitParticles(this, Vec3f(position.x, Maths::Max(position.y, 3.0f), position.z), velocity, BulletHitMaterial3D::Rock);
 		this.server_Die();
 		return true;
 	}
@@ -592,7 +590,7 @@ void HandleBullet3DHit(CBlob@ this, CBlob@ b, Vec3f hitPosition3D)
 	}
 
 	Vec2f hitPosition = Bullet3DXZ(hitPosition3D);
-	SendBullet3DHitParticles(this, b, hitPosition3D, GetBullet3DVelocity(this), GetBullet3DHitMaterial(b));
+	SendBullet3DHitParticles(this, hitPosition3D, GetBullet3DVelocity(this), GetBullet3DHitMaterial(b));
 	this.server_Hit(damageTarget, hitPosition, Vec2f_zero, getDamage(damageTarget, blockType), 0, true);
 	this.server_Die();
 }
@@ -608,21 +606,23 @@ u8 GetBullet3DHitMaterial(CBlob@ hitBlob)
 	return BulletHitMaterial3D::Rock;
 }
 
-void SendBullet3DHitParticles(CBlob@ this, CBlob@ hitBlob, Vec3f hitPosition3D, Vec3f incomingVelocity, u8 material)
+void SendBullet3DHitParticles(CBlob@ this, Vec3f hitPosition3D, Vec3f incomingVelocity, u8 material)
 {
 	if (!getNet().isServer())
 		return;
 
-	CBitStream params;
-	params.write_u8(material);
-	params.write_u16(hitBlob is null ? 0 : hitBlob.getNetworkID());
-	params.write_f32(hitPosition3D.x);
-	params.write_f32(hitPosition3D.y);
-	params.write_f32(hitPosition3D.z);
-	params.write_f32(incomingVelocity.x);
-	params.write_f32(incomingVelocity.y);
-	params.write_f32(incomingVelocity.z);
-	this.SendCommand(this.getCommandID(BULLET_3D_HIT_PARTICLES_CMD), params);
+	if (material == BulletHitMaterial3D::Sand)
+	{
+		SendParticle3DEvent(Particle3DEvent::SandImpact, hitPosition3D, incomingVelocity, 1.0f, 0, this.getNetworkID());
+	}
+	else if (material == BulletHitMaterial3D::Water)
+	{
+		SendParticle3DEvent(Particle3DEvent::WaterSplash, hitPosition3D, incomingVelocity, 0.75f, 0, this.getNetworkID());
+	}
+	else
+	{
+		SendParticle3DEvent(Particle3DEvent::BulletHit, hitPosition3D, incomingVelocity, 1.0f, 0, this.getNetworkID());
+	}
 }
 
 f32 getDamage( CBlob@ hitBlob, int blockType )
@@ -722,43 +722,6 @@ bool onReceiveCreateData( CBlob@ this, CBitStream@ stream )
 		SetBullet3DVelocity(this, Vec3f(velocity.x, 0.0f, velocity.y));
 	}
 	return true;
-}
-
-void onCommand(CBlob@ this, u8 cmd, CBitStream@ params)
-{
-	if (cmd != this.getCommandID(BULLET_3D_HIT_PARTICLES_CMD))
-		return;
-
-	u8 material;
-	u16 hitBlobID;
-	f32 hitX;
-	f32 hitY;
-	f32 hitZ;
-	f32 velX;
-	f32 velY;
-	f32 velZ;
-	if (!params.saferead_u8(material)
-		|| !params.saferead_u16(hitBlobID)
-		|| !params.saferead_f32(hitX) || !params.saferead_f32(hitY) || !params.saferead_f32(hitZ)
-		|| !params.saferead_f32(velX) || !params.saferead_f32(velY) || !params.saferead_f32(velZ))
-	{
-		return;
-	}
-
-	Vec3f hitPosition(hitX, hitY, hitZ);
-	Vec3f incomingVelocity(velX, velY, velZ);
-	if (material == BulletHitMaterial3D::Sand)
-	{
-		EmitSandImpactParticles3D(hitPosition, incomingVelocity, 1.0f);
-	}
-	else if (material == BulletHitMaterial3D::Water)
-	{
-		EmitWaterSplashParticles3D(hitPosition, incomingVelocity, 0.75f);
-	}
-	else
-	{
-		EmitBulletHitParticles3D(hitPosition, incomingVelocity);
-	}
 }
 
 Random _sprk_r;

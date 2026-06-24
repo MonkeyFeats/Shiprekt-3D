@@ -48,7 +48,9 @@ const string HUMAN_3D_NET_OLD_Y = "human 3d net old y";
 const u32 HUMAN_3D_SYNC_RATE = 2;
 const f32 HUMAN_3D_SPAWN_Y = 16.0f;
 const f32 HUMAN_3D_WATER_EXIT_HEIGHT = 2.0f;
-const f32 HUMAN_3D_OWNER_CORRECTION_SNAP = 4.0f;
+const f32 HUMAN_3D_OWNER_CORRECTION_START = 4.0f;
+const f32 HUMAN_3D_OWNER_CORRECTION_HARD_SNAP = 96.0f;
+const f32 HUMAN_3D_OWNER_CORRECTION_BLEND = 0.25f;
 const u8 HUMAN_3D_TEAM = 6;
 
 Vec2f Human3DXZ(Vec3f v)
@@ -337,6 +339,36 @@ void ApplyHumanCameraStateToBlob3D(CBlob@ this)
 	}
 }
 
+bool ReadHumanReplicatedTransform(CBlob@ this, f32 &out oldX, f32 &out oldY, f32 &out oldZ, f32 &out x, f32 &out y, f32 &out z)
+{
+	if (this is null || !this.exists(HUMAN_3D_NET_POS) || !this.exists(HUMAN_3D_NET_Y))
+	{
+		return false;
+	}
+
+	Vec2f currentXZ = this.get_Vec2f(HUMAN_3D_NET_POS);
+	const f32 currentY = this.get_f32(HUMAN_3D_NET_Y);
+	Vec2f oldXZ = this.exists(HUMAN_3D_NET_OLD_POS) ? this.get_Vec2f(HUMAN_3D_NET_OLD_POS) : currentXZ;
+	const f32 previousY = this.exists(HUMAN_3D_NET_OLD_Y) ? this.get_f32(HUMAN_3D_NET_OLD_Y) : currentY;
+
+	oldX = oldXZ.x;
+	oldY = previousY;
+	oldZ = oldXZ.y;
+	x = currentXZ.x;
+	y = currentY;
+	z = currentXZ.y;
+	return true;
+}
+
+Vec3f LerpHumanTransform(const f32 oldX, const f32 oldY, const f32 oldZ, const f32 x, const f32 y, const f32 z, const f32 amount)
+{
+	return Vec3f(
+		Maths::Lerp(oldX, x, amount),
+		Maths::Lerp(oldY, y, amount),
+		Maths::Lerp(oldZ, z, amount)
+	);
+}
+
 void UpdateRemoteHumanNetworkState(CBlob@ this, Blob3D@ blob3d)
 {
 	if (!getNet().isClient() || this is null || blob3d is null || this.isMyPlayer() || this.isAttached())
@@ -344,22 +376,19 @@ void UpdateRemoteHumanNetworkState(CBlob@ this, Blob3D@ blob3d)
 		return;
 	}
 
-	Vec2f replicatedPos = this.getPosition();
-	f32 replicatedY = blob3d.getPosition().y;
+	Vec3f position(this.getPosition().x, blob3d.transform.Position.y, this.getPosition().y);
 	const f32 amount = Maths::Clamp01(getRules().get_f32("interFrameTime"));
-	if (this.exists(HUMAN_3D_NET_POS))
+	f32 oldX;
+	f32 oldY;
+	f32 oldZ;
+	f32 x;
+	f32 y;
+	f32 z;
+	if (ReadHumanReplicatedTransform(this, oldX, oldY, oldZ, x, y, z))
 	{
-		Vec2f oldPos = this.exists(HUMAN_3D_NET_OLD_POS) ? this.get_Vec2f(HUMAN_3D_NET_OLD_POS) : this.get_Vec2f(HUMAN_3D_NET_POS);
-		Vec2f pos = this.get_Vec2f(HUMAN_3D_NET_POS);
-		replicatedPos = Vec2f(Maths::Lerp(oldPos.x, pos.x, amount), Maths::Lerp(oldPos.y, pos.y, amount));
-	}
-	if (this.exists(HUMAN_3D_NET_Y))
-	{
-		const f32 oldY = this.exists(HUMAN_3D_NET_OLD_Y) ? this.get_f32(HUMAN_3D_NET_OLD_Y) : this.get_f32(HUMAN_3D_NET_Y);
-		replicatedY = Maths::Lerp(oldY, this.get_f32(HUMAN_3D_NET_Y), amount);
+		position = LerpHumanTransform(oldX, oldY, oldZ, x, y, z, amount);
 	}
 
-	Vec3f position(replicatedPos.x, replicatedY, replicatedPos.y);
 	blob3d.setPosition(position);
 	if (blob3d.shape !is null)
 	{
@@ -393,28 +422,48 @@ void ReconcileLocalHumanNetworkState(CBlob@ this, Blob3D@ blob3d)
 		return;
 	}
 
-	Vec2f serverXZ = this.get_Vec2f(HUMAN_3D_NET_POS);
-	Vec3f serverPos(serverXZ.x, this.get_f32(HUMAN_3D_NET_Y), serverXZ.y);
-	Vec3f delta = serverPos - blob3d.getPosition();
-	if (delta.LengthSquared() < HUMAN_3D_OWNER_CORRECTION_SNAP * HUMAN_3D_OWNER_CORRECTION_SNAP)
+	f32 oldX;
+	f32 oldY;
+	f32 oldZ;
+	f32 serverX;
+	f32 serverY;
+	f32 serverZ;
+	if (!ReadHumanReplicatedTransform(this, oldX, oldY, oldZ, serverX, serverY, serverZ))
 	{
 		return;
 	}
 
-	blob3d.setPosition(serverPos);
+	Vec3f currentPosition(blob3d.transform.Position.x, blob3d.transform.Position.y, blob3d.transform.Position.z);
+	Vec3f delta = Vec3f(
+		serverX - currentPosition.x,
+		serverY - currentPosition.y,
+		serverZ - currentPosition.z
+	);
+	if (delta.LengthSquared() < HUMAN_3D_OWNER_CORRECTION_START * HUMAN_3D_OWNER_CORRECTION_START)
+	{
+		return;
+	}
+
+	Vec3f correctedPosition(currentPosition.x, currentPosition.y, currentPosition.z);
+	if (delta.LengthSquared() >= HUMAN_3D_OWNER_CORRECTION_HARD_SNAP * HUMAN_3D_OWNER_CORRECTION_HARD_SNAP)
+	{
+		correctedPosition.x = serverX;
+		correctedPosition.y = serverY;
+		correctedPosition.z = serverZ;
+	}
+	else
+	{
+		correctedPosition.x += delta.x * HUMAN_3D_OWNER_CORRECTION_BLEND;
+		correctedPosition.y += delta.y * HUMAN_3D_OWNER_CORRECTION_BLEND;
+		correctedPosition.z += delta.z * HUMAN_3D_OWNER_CORRECTION_BLEND;
+	}
+
+	blob3d.setPosition(correctedPosition);
 	if (blob3d.shape !is null)
 	{
-		blob3d.shape.setPosition(serverPos);
+		blob3d.shape.setPosition(correctedPosition);
 		blob3d.shape.onGround = this.get_bool("onGround");
 	}
-	if (blob3d.rb !is null)
-	{
-		blob3d.rb.setVelocity(Vec3f());
-		blob3d.rb.pendingPositionCorrection = Vec3f();
-		blob3d.rb.pendingVelocityDisplacement = Vec3f();
-		blob3d.rb.pendingVelocityCorrection = Vec3f();
-	}
-	this.setPosition(serverXZ);
 }
 
 void EnsureHumanShape(Blob3D@ blob3d)
@@ -731,26 +780,6 @@ void onTick( CBlob@ this )
 	Update( this );
 
 	u32 gameTime = getGameTime();
-
-	if (getNet().isServer())
-	{
-		Vec2f pos = blob3d.getPosition().xz();
-		Vec2f oldPos = this.exists(HUMAN_3D_NET_POS) ? this.get_Vec2f(HUMAN_3D_NET_POS) : pos;
-		const f32 oldY = this.exists(HUMAN_3D_NET_Y) ? this.get_f32(HUMAN_3D_NET_Y) : blob3d.getPosition().y;
-		this.set_Vec2f(HUMAN_3D_NET_OLD_POS, oldPos);
-		this.set_Vec2f(HUMAN_3D_NET_POS, pos);
-		this.set_f32(HUMAN_3D_NET_OLD_Y, oldY);
-		this.set_f32(HUMAN_3D_NET_Y, blob3d.getPosition().y);
-		if (gameTime % HUMAN_3D_SYNC_RATE == 0)
-		{
-			this.Sync(HUMAN_3D_NET_OLD_POS, true);
-			this.Sync(HUMAN_3D_NET_POS, true);
-			this.Sync(HUMAN_3D_NET_OLD_Y, true);
-			this.Sync(HUMAN_3D_NET_Y, true);
-			this.set_bool( "onGround", IsHumanGrounded(this, blob3d) );
-			this.Sync( "onGround", true );
-		}
-	}
 
 	if (this.isMyPlayer())
 	{

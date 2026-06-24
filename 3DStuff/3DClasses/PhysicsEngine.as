@@ -122,18 +122,19 @@ shared class PhysicsWorld
 		if (blob is null)
 			return;
 
-		blob.setPosition(blob3d.getPosition().xz());
+		Vec3f position = blob3d.getPosition();
+		blob.setPosition(position.xz());
 
 		if (!getNet().isServer() || blob.getName() != "human")
 			return;
 
-		Vec2f pos = blob3d.getPosition().xz();
+		Vec2f pos = position.xz();
 		Vec2f oldPos = blob.exists("human 3d net pos") ? blob.get_Vec2f("human 3d net pos") : pos;
-		const f32 oldY = blob.exists("human 3d net y") ? blob.get_f32("human 3d net y") : blob3d.getPosition().y;
+		const f32 oldY = blob.exists("human 3d net y") ? blob.get_f32("human 3d net y") : position.y;
 		blob.set_Vec2f("human 3d net old pos", oldPos);
 		blob.set_Vec2f("human 3d net pos", pos);
 		blob.set_f32("human 3d net old y", oldY);
-		blob.set_f32("human 3d net y", blob3d.getPosition().y);
+		blob.set_f32("human 3d net y", position.y);
 		blob.set_bool("onGround", blob3d.shape !is null && blob3d.shape.onGround);
 
 		if (getGameTime() % 2 == 0)

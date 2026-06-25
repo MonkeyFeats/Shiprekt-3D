@@ -65,14 +65,21 @@ void onTick(CMovement@ this)
 
 	if (blob.getTickSinceCreated() < 10) return;		
 
+	const bool is_client = getNet().isClient();
+	if (is_client && !getNet().isServer() && !blob.isMyPlayer())
+	{
+		return;
+	}
+
 	const bool left		= blob.isKeyPressed(key_left);
 	const bool right	= blob.isKeyPressed(key_right);
 	const bool up		= blob.isKeyPressed(key_up);
 	const bool down		= blob.isKeyPressed(key_down);
 	const bool spacebar	= blob.isKeyJustPressed(key_action3);
 	const bool jumpHeld	= blob.isKeyPressed(key_action3);
-	const bool swimDown	= getControls().isKeyPressed( KEY_KEY_C );
-	const bool is_client = getNet().isClient();
+	const bool localControls = is_client && blob.isMyPlayer();
+	const bool serverControls = getNet().isServer();
+	const bool swimDown = localControls && getControls().isKeyPressed( KEY_KEY_C );
 	const u32 time = getGameTime();
 
 	Vec3f Pos = blob3d.getPosition();
@@ -81,8 +88,13 @@ void onTick(CMovement@ this)
 	blob.set_bool("onGround", grounded);
 	blob.getShape().getVars().onground = grounded;
 
-    CControls@ c = getControls();
-    Driver@ d = getDriver();
+    CControls@ c = null;
+    Driver@ d = null;
+	if (localControls)
+	{
+		@c = getControls();
+		@d = getDriver();
+	}
 
 	Vec3f moveForce;
 	s32 jumpState = blob.get_s32(HUMAN_JUMP_STATE);
@@ -92,23 +104,27 @@ void onTick(CMovement@ this)
 	shape.inWater = inwater;
 	const bool underWaterSurface = inwater && waterDepth > HUMAN_WATER_SURFACE_DEADBAND;
 	const bool atWaterSurface = inwater && waterDepth >= -HUMAN_WATER_SURFACE_DEADBAND && waterDepth <= HUMAN_WATER_JUMP_DEPTH;
-	const bool canControl = isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !block_menu && !getHUD().hasButtons() && !blob.get_bool("build menu open");
+	const bool canControl = serverControls || (localControls && c !is null && d !is null && isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !block_menu && !getHUD().hasButtons() && !blob.get_bool("build menu open"));
 	const bool wasInWater = blob.get_bool(HUMAN_WAS_IN_WATER);
-	if (is_client && inwater && !wasInWater && rb.getVelocity().y < -3.5f)
+	if (inwater && !wasInWater && rb.getVelocity().y < -3.5f)
 	{
-		EmitWaterSplashParticles3D(Vec3f(Pos.x, waterSurfaceY, Pos.z), rb.getVelocity(), Maths::Clamp(Maths::Abs(rb.getVelocity().y) * 0.16f, 0.65f, 1.45f));
+		const f32 splashPower = Maths::Clamp(Maths::Abs(rb.getVelocity().y) * 0.16f, 0.65f, 1.45f);
+		EmitReplicatedParticle3DEvent(blob, Particle3DEvent::WaterSplash, Vec3f(Pos.x, waterSurfaceY, Pos.z), rb.getVelocity(), splashPower);
 	}
 	blob.set_bool(HUMAN_WAS_IN_WATER, inwater);
 
     if (canControl)
     {
-        Vec2f ScrMid = d.getScreenCenterPos();//Vec2f(float(getScreenWidth()) / 2.0f, float(getScreenHeight()) / 2.0f);
-        Vec2f dir = (c.getMouseScreenPos() - ScrMid);
-        
-        blob3d.transform.Orientation.x -= dir.x*0.15;
-        if(blob3d.transform.Orientation.x < 0) blob3d.transform.Orientation.x += 360;
-        blob3d.transform.Orientation.x = blob3d.transform.Orientation.x % 360;
-        blob3d.transform.Orientation.y = Maths::Clamp(blob3d.transform.Orientation.y+(dir.y*0.15), -60,60); // -44 is a weird way to say 90, but ok? ToDo: fix this with stuff below and camera3d! 
+		if (localControls)
+		{
+			Vec2f ScrMid = d.getScreenCenterPos();//Vec2f(float(getScreenWidth()) / 2.0f, float(getScreenHeight()) / 2.0f);
+			Vec2f dir = (c.getMouseScreenPos() - ScrMid);
+
+			blob3d.transform.Orientation.x -= dir.x*0.15;
+			if(blob3d.transform.Orientation.x < 0) blob3d.transform.Orientation.x += 360;
+			blob3d.transform.Orientation.x = blob3d.transform.Orientation.x % 360;
+			blob3d.transform.Orientation.y = Maths::Clamp(blob3d.transform.Orientation.y+(dir.y*0.15), -60,60); // -44 is a weird way to say 90, but ok? ToDo: fix this with stuff below and camera3d!
+		}
         // pitch = Maths::Clamp(pitch - dir.y * 0.15f, -85.0f, 85.0f);
 		// yaw += dir.x * 0.15f;
 		// Quaternion q;
@@ -195,7 +211,7 @@ void onTick(CMovement@ this)
 			}
 			else
 			{
-				if (moveForce.Length() > 0.3f && is_client)
+				if (moveForce.Length() > 0.3f)
 				{	
 					if (time % (10) == 0)
 					{						
@@ -203,8 +219,10 @@ void onTick(CMovement@ this)
 						const bool shallowFootstep = tileType >= CMap::water_1 && tileType <= CMap::water_4;
 						if (tileType == CMap::sand || shallowFootstep)
 						{
-							EmitFootstepParticles3D(Vec3f(Pos.x, shallowFootstep ? waterSurfaceY : 0.25f, Pos.z), shallowFootstep);
+							const u8 footstepFlags = shallowFootstep ? Particle3DEventFlags::ShallowWater : u8(0);
+							EmitReplicatedParticle3DEvent(blob, Particle3DEvent::Footstep, Vec3f(Pos.x, shallowFootstep ? waterSurfaceY : 0.25f, Pos.z), Vec3f(0.0f, -0.5f, 0.0f), 0.45f, footstepFlags);
 						}
+						if (is_client)
 						{
 							blob.getSprite().PlayRandomSound("/EarthStep", 0.6f, 0.75f );
 						} 
@@ -260,7 +278,7 @@ void onTick(CMovement@ this)
 			if (atWaterSurface && rb.getVelocity().xz().LengthSquared() > 1.0f && time - blob.get_u32(HUMAN_LAST_FOOTSTEP_PARTICLE_TIME) > 12)
 			{
 				blob.set_u32(HUMAN_LAST_FOOTSTEP_PARTICLE_TIME, time);
-				EmitWakeParticles3D(Vec3f(Pos.x, waterSurfaceY, Pos.z), rb.getVelocity() * -1.0f, 0.45f);
+				EmitReplicatedParticle3DEvent(blob, Particle3DEvent::Wake, Vec3f(Pos.x, waterSurfaceY, Pos.z), rb.getVelocity() * -1.0f, 0.45f);
 			}
 //
 			if (time % 160 == 0)
@@ -275,6 +293,12 @@ void onTick(CMovement@ this)
 		else
 		{
 			blob.getSprite().SetEmitSoundPaused(true);
+		}
+
+		if (!is_client && inwater && atWaterSurface && rb.getVelocity().xz().LengthSquared() > 1.0f && time - blob.get_u32(HUMAN_LAST_FOOTSTEP_PARTICLE_TIME) > 12)
+		{
+			blob.set_u32(HUMAN_LAST_FOOTSTEP_PARTICLE_TIME, time);
+			EmitReplicatedParticle3DEvent(blob, Particle3DEvent::Wake, Vec3f(Pos.x, waterSurfaceY, Pos.z), rb.getVelocity() * -1.0f, 0.45f);
 		}
 	}
 

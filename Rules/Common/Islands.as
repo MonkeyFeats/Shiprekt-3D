@@ -474,6 +474,10 @@ void UpdateIslandBlob( CBlob@ blob, Island @isle, IslandBlock@ isle_block )
 	Blob3D@ blob3d;
 	if (blob.get("blob3d", @blob3d))
 	{		
+		Vec3f oldBlockPos3D = blob3d.transform.Position;
+		blob.set_f32("platform 3d delta x", blockPos3D.x - oldBlockPos3D.x);
+		blob.set_f32("platform 3d delta y", blockPos3D.y - oldBlockPos3D.y);
+		blob.set_f32("platform 3d delta z", blockPos3D.z - oldBlockPos3D.z);
 		blob3d.setPosition( blockPos3D );
 		blob3d.transform.Orientation.x = worldAngle;
 		blob3d.transform.Orientation.y = 0.0f;
@@ -521,7 +525,7 @@ void UpdateIslandWaveVisual( Island@ isle )
 		return;
 
 	CRules@ rules = getRules();
-	if ( !getNet().isClient() || (rules !is null && rules.get_bool(SHIP_WAVE_VISUALS_DISABLED)) )
+	if ( rules !is null && rules.get_bool(SHIP_WAVE_VISUALS_DISABLED) )
 	{
 		isle.waveYOffset = 0.0f;
 		isle.waveSlopeX = 0.0f;
@@ -558,7 +562,7 @@ void ApplyIslandWaveVisualToBlob( Island@ isle, Vec2f worldOffset, const f32 wor
 		return;
 
 	CRules@ rules = getRules();
-	if ( !getNet().isClient() || (rules !is null && rules.get_bool(SHIP_WAVE_VISUALS_DISABLED)) )
+	if ( rules !is null && rules.get_bool(SHIP_WAVE_VISUALS_DISABLED) )
 	{
 		blob3d.renderOffset = Vec3f();
 		blob3d.renderRotation = Vec3f();

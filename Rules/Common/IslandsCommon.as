@@ -254,7 +254,7 @@ f32 GetIslandWaveVisualY( Island@ isle, Vec2f worldOffset )
 		return 0.0f;
 
 	CRules@ rules = getRules();
-	if ( !getNet().isClient() || (rules !is null && rules.get_bool(SHIP_WAVE_VISUALS_DISABLED)) )
+	if ( rules !is null && rules.get_bool(SHIP_WAVE_VISUALS_DISABLED) )
 		return 0.0f;
 
 	return SHIP_WAVE_BASE_Y_OFFSET + isle.waveYOffset + worldOffset.x * isle.waveSlopeX + worldOffset.y * isle.waveSlopeZ;
@@ -266,7 +266,7 @@ Vec3f GetIslandWaveVisualRotation( Island@ isle )
 		return Vec3f();
 
 	CRules@ rules = getRules();
-	if ( !getNet().isClient() || (rules !is null && rules.get_bool(SHIP_WAVE_VISUALS_DISABLED)) )
+	if ( rules !is null && rules.get_bool(SHIP_WAVE_VISUALS_DISABLED) )
 		return Vec3f();
 
 	return Vec3f(

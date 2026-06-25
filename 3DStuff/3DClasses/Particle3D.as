@@ -3,6 +3,21 @@
 #include "OceanWave.as"
 
 const string PARTICLE_SYSTEM_3D_KEY = "particle_system_3d";
+const string PARTICLE_3D_EVENT_CMD = "particle 3d event";
+
+namespace Particle3DEvent
+{
+    const u8 WaterSplash = 0;
+    const u8 Wake = 1;
+    const u8 Footstep = 2;
+    const u8 BulletHit = 3;
+    const u8 SandImpact = 4;
+}
+
+namespace Particle3DEventFlags
+{
+    const u8 ShallowWater = 1;
+}
 
 namespace ParticleFace3D
 {
@@ -433,6 +448,114 @@ void EmitParticle3D(Particle3D@ particle)
     {
         system.Add(particle);
     }
+}
+
+void RegisterParticle3DNetworkCommands(CRules@ rules)
+{
+    if (rules !is null)
+    {
+        rules.addCommandID(PARTICLE_3D_EVENT_CMD);
+    }
+}
+
+void EmitParticle3DEventLocal(const u8 particleType, Vec3f position, Vec3f velocity, const f32 power = 1.0f, const u8 flags = 0)
+{
+    if (!getNet().isClient())
+        return;
+
+    if (particleType == Particle3DEvent::WaterSplash)
+    {
+        EmitWaterSplashParticles3D(position, velocity, power);
+    }
+    else if (particleType == Particle3DEvent::Wake)
+    {
+        EmitWakeParticles3D(position, velocity, power);
+    }
+    else if (particleType == Particle3DEvent::Footstep)
+    {
+        EmitFootstepParticles3D(position, (flags & Particle3DEventFlags::ShallowWater) != 0);
+    }
+    else if (particleType == Particle3DEvent::BulletHit)
+    {
+        EmitBulletHitParticles3D(position, velocity);
+    }
+    else if (particleType == Particle3DEvent::SandImpact)
+    {
+        EmitSandImpactParticles3D(position, velocity, power);
+    }
+}
+
+void SendParticle3DEvent(const u8 particleType, Vec3f position, Vec3f velocity, const f32 power = 1.0f, const u8 flags = 0, const u16 sourceBlobID = 0)
+{
+    if (!getNet().isServer())
+        return;
+
+    CRules@ rules = getRules();
+    if (rules is null)
+        return;
+
+    CBitStream params;
+    params.write_u8(particleType);
+    params.write_u8(flags);
+    params.write_u16(sourceBlobID);
+    params.write_f32(position.x);
+    params.write_f32(position.y);
+    params.write_f32(position.z);
+    params.write_f32(velocity.x);
+    params.write_f32(velocity.y);
+    params.write_f32(velocity.z);
+    params.write_f32(power);
+    rules.SendCommand(rules.getCommandID(PARTICLE_3D_EVENT_CMD), params);
+}
+
+void EmitReplicatedParticle3DEvent(CBlob@ sourceBlob, const u8 particleType, Vec3f position, Vec3f velocity, const f32 power = 1.0f, const u8 flags = 0)
+{
+    if (sourceBlob !is null && sourceBlob.isMyPlayer())
+    {
+        EmitParticle3DEventLocal(particleType, position, velocity, power, flags);
+    }
+
+    u16 sourceBlobID = 0;
+    if (sourceBlob !is null)
+    {
+        sourceBlobID = sourceBlob.getNetworkID();
+    }
+    SendParticle3DEvent(particleType, position, velocity, power, flags, sourceBlobID);
+}
+
+void HandleParticle3DEventCommand(CRules@ rules, CBitStream@ params)
+{
+    u8 particleType;
+    u8 flags;
+    u16 sourceBlobID;
+    f32 posX;
+    f32 posY;
+    f32 posZ;
+    f32 velX;
+    f32 velY;
+    f32 velZ;
+    f32 power;
+    if (!params.saferead_u8(particleType)
+        || !params.saferead_u8(flags)
+        || !params.saferead_u16(sourceBlobID)
+        || !params.saferead_f32(posX) || !params.saferead_f32(posY) || !params.saferead_f32(posZ)
+        || !params.saferead_f32(velX) || !params.saferead_f32(velY) || !params.saferead_f32(velZ)
+        || !params.saferead_f32(power))
+    {
+        return;
+    }
+
+    CBlob@ sourceBlob = null;
+    if (sourceBlobID != 0)
+    {
+        @sourceBlob = getBlobByNetworkID(sourceBlobID);
+    }
+    if (sourceBlob !is null && sourceBlob.isMyPlayer())
+    {
+        return;
+    }
+
+    EmitParticle3DEventLocal(particleType, Vec3f(posX, posY, posZ), Vec3f(velX, velY, velZ), power, flags);
 }
 
 Vec3f GetRenderedParticlePosition(CBlob@ anchor, Vec2f pos, f32 height = 8.0f)

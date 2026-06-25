@@ -32,6 +32,7 @@ SMesh@ SkyMesh = SMesh();
 
 World@ world;
 Root@ tree;
+bool mapShapesLoaded = false;
 
 Tool@ tool; 
 Telescope@ scope; 
@@ -47,6 +48,7 @@ void onInit(CRules@ this)
 		tool = Tool();
 	
 	this.addCommandID(sync_id);
+	RegisterParticle3DNetworkCommands(this);
 
 	SkyMesh.LoadObjIntoMesh("skydome.obj");
 	SkyMesh.SetHardwareMapping(SMesh::STATIC);	
@@ -60,6 +62,14 @@ void onInit(CRules@ this)
 
  	@compass = Compass(); 
  	@Ocean = OceanWater();
+	EnsureClient3DWorld();
+}
+
+void onRestart(CRules@ this)
+{
+	@world = null;
+	@tree = null;
+	mapShapesLoaded = false;
 }
 
 void onTick(CRules@ this)
@@ -69,6 +79,7 @@ void onTick(CRules@ this)
 
 	Ocean.Update();
 	UpdateParticleSystem3D(1.0f);
+	EnsureClient3DWorld();
 
 	CPlayer@ p = getLocalPlayer();
 	if(p !is null)
@@ -341,6 +352,7 @@ void threedee(int id)
 		Camera3D@ camera;
 		p.get("Camera3D", @camera);
 		if (camera is null) { return; }
+		EnsureClient3DWorld();
 		if (world is null) { return; }			
 
 		camera.render_update();		
@@ -694,6 +706,42 @@ void RenderBlob3DMeshes(float[] model)
 	}
 }
 
+bool EnsureClient3DWorld()
+{
+	if (world !is null)
+	{
+		return true;
+	}
+
+	CMap@ map = getMap();
+	if (map is null || map.tilemapwidth == 0 || map.tilemapheight == 0)
+	{
+		return false;
+	}
+
+	if (!mapShapesLoaded)
+	{
+		LoadMapShapes(map);
+		mapShapesLoaded = true;
+	}
+
+	World@ _world;
+	if (!map.get("terrainInfo", @_world) || _world is null)
+	{
+		return false;
+	}
+
+	@world = _world;
+
+	Root _tree(world.mapWidth, world.mapHeight, world.mapDepth);
+	if (_tree !is null)
+	{
+		@tree = _tree;
+	}
+
+	return true;
+}
+
 void RefreshShipBlockTransformForRender(CBlob@ blob, Blob3D@ blob3d)
 {
 	if (blob is null || blob3d is null || blob.getName() != "block")
@@ -1045,23 +1093,19 @@ void onNewPlayerJoin(CRules@ this, CPlayer@ player)
 
 void onCommand(CRules@ this, u8 cmd, CBitStream@ params)
 {		
+	if (cmd == this.getCommandID(PARTICLE_3D_EVENT_CMD))
+	{
+		HandleParticle3DEventCommand(this, params);
+		return;
+	}
+
 	if (cmd == this.getCommandID(sync_id))
 	{	
 		u16 id = params.read_u16();
 		CPlayer@ player = getPlayerByNetworkId(id);
-		if (player.isMyPlayer())
+		if (player !is null && player.isMyPlayer())
 		{				
-			LoadMapShapes(getMap());
-
-			World@ _world;
-			if (getMap().get("terrainInfo", @_world))
-			@world = _world;
-
-			Root _tree(world.mapWidth, world.mapHeight, world.mapDepth);
-			if ( _tree !is null )
-			{
-				@tree = _tree;
-			}
+			EnsureClient3DWorld();
 			//SetUpTree();
 			//for(int i = 0; i < world.Chunks.size(); i++)
 			//{

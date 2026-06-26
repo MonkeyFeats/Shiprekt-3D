@@ -371,7 +371,8 @@ void Spectator(CRules@ this)
 
 				Vec3f dir = camera.getRotation();
 				Vec2f adjustment = (controls.getMouseScreenPos() - ScrMid);				
-				dir.x += adjustment.x*.2;
+				const f32 cameraMirrorSign = Get3DCameraHorizontalMirrorSign();
+				dir.x += adjustment.x * 0.2f * cameraMirrorSign;
 				dir.y = Maths::Clamp(dir.y-(adjustment.y*.2),-90,90);
 
 				Vec3f pos;
@@ -407,6 +408,7 @@ void Spectator(CRules@ this)
 					SetTargetPlayer(null);
 				}
 
+				pos.x *= cameraMirrorSign;
 				pos.xzRotateBy(dir.x);
 				
 			    if(controls.isKeyJustReleased(KEY_LBUTTON))

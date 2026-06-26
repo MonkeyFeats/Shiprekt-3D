@@ -6,7 +6,7 @@ void RenderMap(Vec2f pos, float[] cam, float dirX, float dirY, float[] proj, f32
 {	
 	float[] model;
 	Matrix::MakeIdentity(model);
-	Render::SetBackfaceCull(true);
+	SetMirrorAwareRenderBackfaceCull(true);
 	
 
 	CMap@ map = getMap();

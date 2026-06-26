@@ -44,7 +44,7 @@ void RenderBlueprintVolume(SColor color)
 	Render::SetAlphaBlend(true);
 	Render::SetBackfaceCull(false);
 	Render::RawTriangles("pixel", vertices);
-	Render::SetBackfaceCull(true);
+	SetMirrorAwareRenderBackfaceCull(true);
 	Render::SetAlphaBlend(false);
 }
 
@@ -248,7 +248,7 @@ void RenderBlob3DWireframe(Blob3D@ blob3d, float[] model, int colorMask)
 	Render::SetZBuffer(true, true);
 	blob3d.Render(model);
 	Render::SetZBuffer(true, true);
-	Render::SetBackfaceCull(true);
+	SetMirrorAwareRenderBackfaceCull(true);
 	Render::SetAlphaBlend(false);
 	RestoreBlob3DWireframeMaterial(@meshes, @materials);
 	ScaleBlob3DRenderScale(blob3d, 1.0f / wireScale);

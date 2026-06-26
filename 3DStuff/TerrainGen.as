@@ -3,6 +3,7 @@
 #include "ShapeArrays.as";
 #include "Vec3f.as";
 #include "Triangle3D.as";
+#include "Camera3D.as";
 
 const string sandtex_name = "SandTexture.png";
 const string grasstex_name = "grass.png";
@@ -178,7 +179,7 @@ shared class TerrainChunk
 						GrassMat.SetFlag(SMaterial::COLOR_MASK, true);
 						GrassMat.SetFlag(SMaterial::ZBUFFER, true);
 						GrassMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
-						GrassMat.SetFlag(SMaterial::BACK_FACE_CULLING, false);
+						SetMirrorAwareMaterialCulling(GrassMat, false);
 						GrassMat.SetMaterialType(SMaterial::TRANSPARENT_ALPHA_CHANNEL_REF );
 						//GrassMat.SetFlag(SMaterial::WIREFRAME, true);
 						GrassMesh.SetMaterial(GrassMat);
@@ -222,7 +223,7 @@ shared class TerrainChunk
 						PalmsMat.SetFlag(SMaterial::COLOR_MASK, true);
 						PalmsMat.SetFlag(SMaterial::ZBUFFER, true);
 						PalmsMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
-						PalmsMat.SetFlag(SMaterial::BACK_FACE_CULLING, false);
+						SetMirrorAwareMaterialCulling(PalmsMat, false);
 						PalmsMat.SetMaterialType(SMaterial::TRANSPARENT_ALPHA_CHANNEL_REF );
 						//PalmsMat.SetFlag(SMaterial::WIREFRAME, true);
 						PalmsMesh.SetMaterial(PalmsMat);
@@ -278,7 +279,7 @@ shared class TerrainChunk
 			TerrainMat.SetFlag(SMaterial::COLOR_MASK, true);
 			TerrainMat.SetFlag(SMaterial::ZBUFFER, true);
 			TerrainMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
-			TerrainMat.SetFlag(SMaterial::BACK_FACE_CULLING, true);
+			SetMirrorAwareMaterialCulling(TerrainMat, true);
 			TerrainMat.SetFlag(SMaterial::GOURAUD_SHADING, true);
 			TerrainMat.SetFlag(SMaterial::FOG_ENABLE, true);
 			//TerrainMat.SetFlag(SMaterial::WIREFRAME, true);

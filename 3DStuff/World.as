@@ -59,7 +59,7 @@ shared class World
 		EdgeWallMat.SetFlag(SMaterial::COLOR_MASK, true);
 		EdgeWallMat.SetFlag(SMaterial::ZBUFFER, true);
 		EdgeWallMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
-		EdgeWallMat.SetFlag(SMaterial::BACK_FACE_CULLING, true);
+		SetMirrorAwareMaterialCulling(EdgeWallMat, true);
 		EdgeWallMat.SetFlag(SMaterial::GOURAUD_SHADING, true);
     	EdgeWallMat.SetMaterialType(SMaterial::TRANSPARENT_ALPHA_CHANNEL );
 		EdgeWallMesh.SetMaterial(EdgeWallMat);

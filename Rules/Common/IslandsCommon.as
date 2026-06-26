@@ -2,6 +2,7 @@
 #include "Vec3f.as";
 #include "Blob3D.as";
 #include "CollisionDebug.as";
+#include "Camera3D.as";
 
 const f32 SHIP_WAVE_BASE_Y_OFFSET = -16.0f;
 const f32 SHIP_WAVE_BOB_SCALE = 1.0f;
@@ -177,7 +178,7 @@ class Island
 		ShipMat.SetFlag(SMaterial::COLOR_MASK, true);
 		ShipMat.SetFlag(SMaterial::ZBUFFER, true);
 		ShipMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
-		ShipMat.SetFlag(SMaterial::BACK_FACE_CULLING, true);
+		SetMirrorAwareMaterialCulling(ShipMat, true);
         ShipMat.SetFlag(SMaterial::ANTI_ALIASING, true);
         ShipMat.SetFlag(SMaterial::BILINEAR_FILTER, false);
         ShipMat.SetLayerBilinearFilter(0, false);

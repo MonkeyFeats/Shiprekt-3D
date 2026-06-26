@@ -124,6 +124,7 @@ void ApplyBlockObjMaterialSettings(SMesh@ mesh)
 	meshMaterial.SetFlag(SMaterial::LIGHTING, false);
 	meshMaterial.SetFlag(SMaterial::BILINEAR_FILTER, false);
 	meshMaterial.SetLayerBilinearFilter(0, false);
+	SetMirrorAwareMaterialCulling(meshMaterial, true);
 }
 
 void LoadBlockObjMesh(SMesh@ mesh, const string &in objPath)
@@ -244,8 +245,7 @@ void ApplyCoreCrystalMaterial(SMesh@ mesh, const int teamNum)
 	meshMaterial.SetFlag(SMaterial::COLOR_MATERIAL, true);
 	meshMaterial.SetFlag(SMaterial::ZBUFFER, true);
 	meshMaterial.SetFlag(SMaterial::ZWRITE_ENABLE, false);
-	meshMaterial.SetFlag(SMaterial::FRONT_FACE_CULLING, false);
-	meshMaterial.SetFlag(SMaterial::BACK_FACE_CULLING, false);
+	SetMirrorAwareMaterialCulling(meshMaterial, false);
 	//meshMaterial.SetFlag(SMaterial::GOURAUD_SHADING, true);
 	meshMaterial.SetFlag(SMaterial::FOG_ENABLE, true);
 	meshMaterial.SetFlag(SMaterial::BILINEAR_FILTER, false);

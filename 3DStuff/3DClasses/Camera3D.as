@@ -8,10 +8,37 @@
 //#include "BoundingFrustum.as"
 
 const string FIRST_PERSON_CAMERA_ENABLED = "first person camera enabled";
+const bool MIRROR_3D_CAMERA_HORIZONTAL = true;
 
 bool IsFirstPersonCameraEnabled(CRules@ rules)
 {
 	return rules is null || !rules.exists(FIRST_PERSON_CAMERA_ENABLED) || rules.get_bool(FIRST_PERSON_CAMERA_ENABLED);
+}
+
+shared bool Is3DCameraHorizontallyMirrored()
+{
+	return MIRROR_3D_CAMERA_HORIZONTAL;
+}
+
+shared f32 Get3DCameraHorizontalMirrorSign()
+{
+	return Is3DCameraHorizontallyMirrored() ? -1.0f : 1.0f;
+}
+
+shared void SetMirrorAwareMaterialCulling(SMaterial@ material, const bool backFaceCulling)
+{
+	if (material is null)
+	{
+		return;
+	}
+
+	material.SetFlag(SMaterial::BACK_FACE_CULLING, backFaceCulling && !Is3DCameraHorizontallyMirrored());
+	material.SetFlag(SMaterial::FRONT_FACE_CULLING, backFaceCulling && Is3DCameraHorizontallyMirrored());
+}
+
+shared void SetMirrorAwareRenderBackfaceCull(const bool backFaceCulling)
+{
+	Render::SetBackfaceCull(backFaceCulling && !Is3DCameraHorizontallyMirrored());
 }
 
 shared class Camera3D
@@ -48,6 +75,15 @@ shared class Camera3D
 		f64 AspectRatio = f64(getDriver().getScreenWidth()) / f64(getDriver().getScreenHeight());
 
 		projection.MakeProjectionMatrixPerspectiveFovLH(fov, AspectRatio, z_near, z_far);
+		ApplyHorizontalMirror();
+	}
+
+	void ApplyHorizontalMirror()
+	{
+		if (MIRROR_3D_CAMERA_HORIZONTAL)
+		{
+			projection.Array[0] *= -1.0f;
+		}
 	}
 
 	Blob3D@ getTarget() {return @this.targetBlob;}

@@ -818,7 +818,7 @@ void UpdateAttachedAim(CBlob@ this, Blob3D@ blob3d)
 
 	Vec2f mouseDelta = controls.getMouseScreenPos() - screenMid;
 
-	blob3d.transform.Orientation.x -= mouseDelta.x * 0.15f;
+	blob3d.transform.Orientation.x -= mouseDelta.x * 0.15f * Get3DCameraHorizontalMirrorSign();
 	if (blob3d.transform.Orientation.x < 0.0f)
 	{
 		blob3d.transform.Orientation.x += 360.0f;

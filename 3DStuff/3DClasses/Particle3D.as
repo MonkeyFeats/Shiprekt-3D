@@ -186,7 +186,7 @@ shared class ParticleSystem3D
 
         Render::SetAlphaBlend(false);
         Render::SetZBuffer(true, true);
-        Render::SetBackfaceCull(true);
+        SetMirrorAwareRenderBackfaceCull(true);
     }
 
     Vec3f SafeNormal(Vec3f value, Vec3f fallback)

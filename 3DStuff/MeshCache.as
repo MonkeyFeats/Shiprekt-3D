@@ -4,6 +4,8 @@
 // instances. Per-instance position/rotation should stay on Blob3D, while the
 // cached SMesh holds only shared geometry/material data.
 
+#include "Camera3D.as"
+
 shared class MeshCacheOptions
 {
 	bool lighting = false;
@@ -144,7 +146,7 @@ shared class MeshCacheLibrary
 			material.SetFlag(SMaterial::LIGHTING, options.lighting);
 			material.SetFlag(SMaterial::ZBUFFER, options.zBuffer);
 			material.SetFlag(SMaterial::ZWRITE_ENABLE, options.zWrite);
-			material.SetFlag(SMaterial::BACK_FACE_CULLING, options.backFaceCulling);
+			SetMirrorAwareMaterialCulling(material, options.backFaceCulling);
 			material.SetFlag(SMaterial::FOG_ENABLE, options.fog);
 			material.SetFlag(SMaterial::BILINEAR_FILTER, options.bilinearFilter);
 			material.SetLayerBilinearFilter(0, options.bilinearFilter);

@@ -80,6 +80,7 @@ void onTick(CMovement@ this)
 	const bool localControls = is_client && blob.isMyPlayer();
 	const bool serverControls = getNet().isServer();
 	const bool swimDown = localControls && getControls().isKeyPressed( KEY_KEY_C );
+	const f32 cameraMirrorSign = Get3DCameraHorizontalMirrorSign();
 	const u32 time = getGameTime();
 
 	Vec3f Pos = blob3d.getPosition();
@@ -120,7 +121,7 @@ void onTick(CMovement@ this)
 			Vec2f ScrMid = d.getScreenCenterPos();//Vec2f(float(getScreenWidth()) / 2.0f, float(getScreenHeight()) / 2.0f);
 			Vec2f dir = (c.getMouseScreenPos() - ScrMid);
 
-			blob3d.transform.Orientation.x -= dir.x*0.15;
+			blob3d.transform.Orientation.x -= dir.x * 0.15f * cameraMirrorSign;
 			if(blob3d.transform.Orientation.x < 0) blob3d.transform.Orientation.x += 360;
 			blob3d.transform.Orientation.x = blob3d.transform.Orientation.x % 360;
 			blob3d.transform.Orientation.y = Maths::Clamp(blob3d.transform.Orientation.y+(dir.y*0.15), -60,60); // -44 is a weird way to say 90, but ok? ToDo: fix this with stuff below and camera3d!
@@ -178,6 +179,7 @@ void onTick(CMovement@ this)
 		if (down)	  moveDir.z -= 1.0f;
 		if (left)	  moveDir.x -= 1.0f;
 		if (right)	  moveDir.x += 1.0f;
+		moveDir.x *= cameraMirrorSign;
 
 		if (moveDir.LengthSquared() > 0.0f)
 		{

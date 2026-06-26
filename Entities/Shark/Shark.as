@@ -45,6 +45,7 @@ void ApplySharkMeshSettings(SMesh@ mesh)
 	material.SetFlag(SMaterial::LIGHTING, false);
 	material.SetFlag(SMaterial::BILINEAR_FILTER, false);
 	material.SetLayerBilinearFilter(0, false);
+	SetMirrorAwareMaterialCulling(material, true);
 	material.SetMaterialType(SMaterial::SOLID);
 	mesh.SetMaterial(material);
 }
@@ -252,7 +253,7 @@ void ManageCamera(CBlob@ this)
 			Vec2f ScrMid = Vec2f(f32(d.getScreenWidth()) / 2, f32(d.getScreenHeight()) / 2);
 			Vec2f dir = (c.getMouseScreenPos() - ScrMid)/10;
 			SharkInfo@ info = GetSharkInfo(this);
-			info.dir_x += dir.x;
+			info.dir_x += dir.x * Get3DCameraHorizontalMirrorSign();
 			info.dir_y = Maths::Clamp(info.dir_y + dir.y, -65, 65);
 
 			PublishSharkRenderState(this, info);

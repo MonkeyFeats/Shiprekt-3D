@@ -1,4 +1,5 @@
 #include "SAT_Shapes.as";
+#include "Camera3D.as";
 
 const f32 ROCK_COLLIDER_DEBUG_INSET = 1.5f;
 
@@ -1014,7 +1015,7 @@ void LoadMapShapes(CMap@ map)
 	    RockMat.SetFlag(SMaterial::COLOR_MASK, true);
 	    RockMat.SetFlag(SMaterial::ZBUFFER, true);
 	    RockMat.SetFlag(SMaterial::ZWRITE_ENABLE, true);
-	    RockMat.SetFlag(SMaterial::BACK_FACE_CULLING, true);
+	    SetMirrorAwareMaterialCulling(RockMat, true);
 	    RockMat.SetMaterialType(SMaterial::SOLID);
 	    //RockMat.SetFlag(SMaterial::LIGHTING, true);
 	    //RockMat.SetEmissiveColor(SColor(255,255,0,180));
@@ -1032,7 +1033,7 @@ void LoadMapShapes(CMap@ map)
 		RockColliderMat.SetFlag(SMaterial::COLOR_MASK, true);
 		RockColliderMat.SetFlag(SMaterial::ZBUFFER, true);
 		RockColliderMat.SetFlag(SMaterial::ZWRITE_ENABLE, false);
-		RockColliderMat.SetFlag(SMaterial::BACK_FACE_CULLING, false);
+		SetMirrorAwareMaterialCulling(RockColliderMat, false);
 		RockColliderMat.SetFlag(SMaterial::WIREFRAME, true);
 		RockColliderMat.SetMaterialType(SMaterial::TRANSPARENT_VERTEX_ALPHA);
 		RockColliderMesh.SetMaterial(RockColliderMat);

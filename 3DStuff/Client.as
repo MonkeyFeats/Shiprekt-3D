@@ -24,6 +24,7 @@
 
 const string sync_id = "mapvote: sync";
 const string BULLET_BILLBOARD_KEY = "bullet_billboard3d";
+const f32 CAMERA_2D_ROTATION_OFFSET = 180.0f;
 
 f32 wave1  = -0.15;
 f32 wave2 = -0.15;
@@ -41,7 +42,7 @@ OceanWater@ Ocean;
 
 void onInit(CRules@ this)
 {
-	Render::addScript(Render::layer_objects, "Client.as", "threedee", 0.0f);
+	Render::addScript(Render::layer_postworld, "Client.as", "threedee", 1.0f); // on layer_postworld because staging is/was having issues with z ordering
 	Render::addScript(Render::layer_prehud, "Client.as", "hud", 2.0f);
 	Render::addScript(Render::layer_posthud, "Client.as", "crosshair", 100.0f);
 	if(tool !is null)
@@ -89,8 +90,9 @@ void onTick(CRules@ this)
 		if (camera is null) { return; }
 	   	    
 		// CCam, for sounds
-		getCamera().setPosition(Vec2f(camera.getPosition().z,camera.getPosition().x));
-		getCamera().setRotation(camera.getRotation().x);
+		Vec3f cameraPos = camera.getPosition();
+		getCamera().setPosition(Vec2f(cameraPos.x, cameraPos.z));
+		getCamera().setRotation(camera.getRotation().x + CAMERA_2D_ROTATION_OFFSET);
 
 	    compass.SetAngle(-camera.getRotation().x/360);
 	}
@@ -360,7 +362,7 @@ void threedee(int id)
 		Render::SetAlphaBlend(false);
 		Render::SetZBuffer(true, true);
 		Render::ClearZ();
-		Render::SetBackfaceCull(true);
+		SetMirrorAwareRenderBackfaceCull(true);
 
 		Matrix::MakeIdentity(model);
         Render::SetModelTransform(model);
@@ -436,11 +438,12 @@ void threedee(int id)
 
 		Matrix::MakeIdentity(model);
         Render::SetModelTransform(model);
-		Render::SetFog(SColor(0x00000000), SMesh::LINEAR, 99999.0, 100000.0, 0.0, false, false);
+		//Render::SetFog(SColor(0x00000000), SMesh::LINEAR, 99999.0, 100000.0, 0.0, false, false);
 		RenderParticleSystem3D(camera.getPosition());
 		Render::SetFog(SColor(0xff3c4455), SMesh::LINEAR, 500.0, 800.0, 0.0, false, true);
 		DrawRaycastDebug();
 		DrawShipWaveSampleDebug();
+		//Render::SetAmbientLight(SColor(255, 10, 20, 255)); //does nothing that I can see - would be good for day cycles
 
 	//	CBlob@[] palms;
 	//	getBlobsByName( "palmtree", @palms );
@@ -654,15 +657,15 @@ void RenderCoreCrystalsLate(float[] model)
 			material.SetFlag(SMaterial::ZBUFFER, true);
 			material.SetFlag(SMaterial::ZWRITE_ENABLE, false);
 			//material.SetZBufferCompareOperation(SMaterial::LESSEQUAL);
-			material.SetFlag(SMaterial::FRONT_FACE_CULLING, true);
-			material.SetFlag(SMaterial::BACK_FACE_CULLING, false);
+			material.SetFlag(SMaterial::FRONT_FACE_CULLING, !Is3DCameraHorizontallyMirrored());
+			material.SetFlag(SMaterial::BACK_FACE_CULLING, Is3DCameraHorizontallyMirrored());
 		}
 		crystal.Render(model);
 
 		if (material !is null)
 		{
-			material.SetFlag(SMaterial::FRONT_FACE_CULLING, false);
-			material.SetFlag(SMaterial::BACK_FACE_CULLING, true);
+			material.SetFlag(SMaterial::FRONT_FACE_CULLING, Is3DCameraHorizontallyMirrored());
+			material.SetFlag(SMaterial::BACK_FACE_CULLING, !Is3DCameraHorizontallyMirrored());
 		}
 		crystal.Render(model);
 
@@ -675,7 +678,7 @@ void RenderCoreCrystalsLate(float[] model)
 
 	Render::SetAlphaBlend(false);
 	Render::SetZBuffer(true, true);
-	Render::SetBackfaceCull(true);
+	SetMirrorAwareRenderBackfaceCull(true);
 }
 
 void RenderBlob3DMeshes(float[] model)
@@ -884,7 +887,7 @@ void RenderBulletBillboards(Vec3f cameraRight, Vec3f cameraUp, float[] model)
 
 	Render::SetZBuffer(true, true);
 	Render::SetAlphaBlend(false);
-	Render::SetBackfaceCull(true);
+	SetMirrorAwareRenderBackfaceCull(true);
 }
 
 EmoteBillboard3D@ EnsureEmoteBillboard(CBlob@ blob, const string &in textureName)
@@ -1073,7 +1076,7 @@ void DrawDebugSegment(Vec3f start, Vec3f end, SColor color, f32 thickness)
 	Render::SetZBuffer(false, false);
 	Render::RawTriangles("pixel", vertices);
 	Render::SetZBuffer(true, true);
-	Render::SetBackfaceCull(true);
+	SetMirrorAwareRenderBackfaceCull(true);
 }
 
 void DrawDebugCross(Vec3f center, SColor color, f32 size)

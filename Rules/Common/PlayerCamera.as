@@ -16,12 +16,17 @@ const f32 FIRST_PERSON_EYE_HEIGHT = 16.0f;
 const f32 THIRD_PERSON_SEAT_OFFSET_X = 0.0f;
 const f32 THIRD_PERSON_SEAT_OFFSET_Y = 20.0f;
 const f32 THIRD_PERSON_SEAT_OFFSET_Z = -40.0f;
+bool staging = false;	
 
 void onInit(CRules@ this)
 {	
 	Reset(this);
 	getCamera().targetDistance = 0.5f;
 	EnsureCamera3D(getLocalPlayer());
+	#ifdef STAGING
+		//statements in this area will only be executed on staging
+		staging = true;
+	#endif
 }
 
 void onRestart(CRules@ this)
@@ -544,7 +549,8 @@ void FollowTarget(CRules@ this, CBlob@ lp)
 				CControls@ controls = getControls();
 
 				Vec2f ScrMid = getDriver().getScreenCenterPos();
-				ScrMid += ArbitraryMouseOffset; 
+				if (!staging)
+					ScrMid += ArbitraryMouseOffset; 
 				Vec2f mouseDistDelta = controls.getMouseScreenPos() - getDriver().getScreenCenterPos();
 
 				if (mouseDistDelta.Length() < 1.5)
@@ -592,7 +598,8 @@ void FollowTarget(CRules@ this, CBlob@ lp)
 				CControls@ controls = getControls();
 
 				Vec2f ScrMid = getDriver().getScreenCenterPos();
-				ScrMid += ArbitraryMouseOffset; 
+				if (!staging)
+					ScrMid += ArbitraryMouseOffset; 
 				Vec2f mouseDistDelta = controls.getMouseScreenPos() - getDriver().getScreenCenterPos();
 
 				if (mouseDistDelta.Length() < 1.5)

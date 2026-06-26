@@ -250,7 +250,7 @@ void ApplyCoreCrystalMaterial(SMesh@ mesh, const int teamNum)
 	meshMaterial.SetFlag(SMaterial::FOG_ENABLE, true);
 	meshMaterial.SetFlag(SMaterial::BILINEAR_FILTER, false);
 	meshMaterial.SetMaterialType(SMaterial::TRANSPARENT_ADD_COLOR);
-	meshMaterial.SetZBufferCompareOperation(SMaterial::LESSEQUAL);
+	//meshMaterial.SetZBufferCompareOperation(SMaterial::LESSEQUAL);
 	meshMaterial.SetColorMask(SMaterial::RGB);
 	//meshMaterial.SetColorMaterial(SMaterial::DIFFUSE_AND_AMBIENT);
 	//meshMaterial.SetBlendOperation(SMaterial::ADD);

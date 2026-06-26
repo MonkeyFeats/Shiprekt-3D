@@ -746,8 +746,6 @@ void onHitBlob( CBlob@ this, Vec2f worldPoint, Vec2f velocity, f32 damage, CBlob
 	}
 	else	if (Block::isSolid(blockType) || blockType == Block::SHIPCORE || hitBlob.hasTag("weapon") || blockType == Block::PLATFORM || blockType == Block::SEAT || Block::isBomb( blockType ) || blockType == Block::DOOR)
 	{
-		//effects
-		sparks(worldPoint, 8);
 		directionalSoundPlay( "Ricochet" +  ( XORRandom(3) + 1 ) + ".ogg", worldPoint, 0.50f );
 	}
 }

@@ -367,7 +367,7 @@ void threedee(int id)
 
 		Render::SetTransform(model, camera.view.Array, camera.projection.Array);
 
-		Render::SetFog(SColor(0xff3c4455), Render::LINEAR, 500.0, 800.0, 0.0, false, true);
+		Render::SetFog(SColor(0xff3c4455), SMesh::LINEAR, 500.0, 800.0, 0.0, false, true);
 
 		Matrix::MakeIdentity(model);
 		Render::SetModelTransform(model);
@@ -436,9 +436,9 @@ void threedee(int id)
 
 		Matrix::MakeIdentity(model);
         Render::SetModelTransform(model);
-		Render::SetFog(SColor(0x00000000), Render::LINEAR, 99999.0, 100000.0, 0.0, false, false);
+		Render::SetFog(SColor(0x00000000), SMesh::LINEAR, 99999.0, 100000.0, 0.0, false, false);
 		RenderParticleSystem3D(camera.getPosition());
-		Render::SetFog(SColor(0xff3c4455), Render::LINEAR, 500.0, 800.0, 0.0, false, true);
+		Render::SetFog(SColor(0xff3c4455), SMesh::LINEAR, 500.0, 800.0, 0.0, false, true);
 		DrawRaycastDebug();
 		DrawShipWaveSampleDebug();
 
@@ -653,7 +653,7 @@ void RenderCoreCrystalsLate(float[] model)
 		{
 			material.SetFlag(SMaterial::ZBUFFER, true);
 			material.SetFlag(SMaterial::ZWRITE_ENABLE, false);
-			material.SetZBufferCompareOperation(SMaterial::LESSEQUAL);
+			//material.SetZBufferCompareOperation(SMaterial::LESSEQUAL);
 			material.SetFlag(SMaterial::FRONT_FACE_CULLING, true);
 			material.SetFlag(SMaterial::BACK_FACE_CULLING, false);
 		}

@@ -112,7 +112,7 @@ void SetBlob3DPreviewTint(Blob3D@ blob3d, SColor color, SMaterial::BlendType ble
 		SMaterial@ material = blob3d.mesh.GetMaterial();
 		if (material !is null)
 		{
-			material.SetAmbientColor(color);
+			//material.SetAmbientColor(color);
 			material.SetDiffuseColor(color);
 			//material.SetBlendOperation(blendType);
 		}

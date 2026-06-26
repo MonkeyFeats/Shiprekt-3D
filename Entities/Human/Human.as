@@ -26,6 +26,10 @@ const f32 BULLET_RANGE = 1000.0f;
 const f32 BULLET_3D_BARREL_FORWARD = 5.5f;
 const f32 BULLET_3D_BARREL_RIGHT = 0.0f;
 const f32 BULLET_3D_BARREL_UP = 10.0f;
+const f32 TOOL_BEAM_3D_HEIGHT = 11.0f;
+const f32 TOOL_BEAM_3D_FORWARD = 6.0f;
+const string TOOL_BEAM_3D_CORE = "tool beam 3d core";
+const string TOOL_BEAM_3D_GLOW = "tool beam 3d glow";
 const bool BULLET_3D_DEBUG = false;
 const bool BULLET_3D_MUZZLE_DEBUG = false;
 const string BULLET_3D_VEL_X = "bullet 3d velocity x";
@@ -157,6 +161,240 @@ Vec3f GetHumanMuzzlePivot3D(CBlob@ this, Blob3D@ shooter3D)
 	}
 
 	return pivot;
+}
+
+Vec3f GetHumanToolBeamOrigin3D(CBlob@ this, Blob3D@ player3D, Vec3f forward)
+{
+	Vec2f pos = this.getPosition();
+	Vec3f origin(pos.x, TOOL_BEAM_3D_HEIGHT, pos.y);
+	if (player3D !is null)
+	{
+		origin = player3D.getRenderPosition();
+		origin.y += TOOL_BEAM_3D_HEIGHT;
+	}
+
+	return origin + forward * TOOL_BEAM_3D_FORWARD;
+}
+
+Vec3f GetToolTargetPoint3D(CBlob@ target)
+{
+	if (target is null)
+	{
+		return Vec3f();
+	}
+
+	Blob3D@ target3D;
+	if (target.get("blob3d", @target3D) && target3D !is null)
+	{
+		Vec3f targetPoint = target3D.getRenderPosition();
+		targetPoint.y += 8.0f;
+		return targetPoint;
+	}
+
+	return GetRenderedParticlePosition(target, target.getInterpolatedPosition(), 8.0f);
+}
+
+Particle3D@ EnsureToolBeamParticle(CBlob@ this, const string &in key, bool glow)
+{
+	Particle3D@ beam;
+	if (this.get(key, @beam) && beam !is null)
+	{
+		if (!beam.IsAlive())
+		{
+			beam.age = 0.0f;
+			EmitParticle3D(beam);
+		}
+		return beam;
+	}
+
+	@beam = Particle3D();
+	beam.pointTrail = true;
+	beam.uniformTrail = true;
+	beam.IsStatic = true;
+	beam.persistent = true;
+	beam.lifetime = 999999.0f;
+	beam.textureName = "pixel";
+	beam.maxTrailPoints = 10;
+	beam.startSize = glow ? 3.1f : 1.25f;
+	beam.endSize = beam.startSize;
+	beam.size = beam.startSize;
+	this.set(key, @beam);
+	EmitParticle3D(beam);
+	return beam;
+}
+
+void KillToolBeam3D(CBlob@ this)
+{
+	Particle3D@ core;
+	if (this.get(TOOL_BEAM_3D_CORE, @core) && core !is null)
+	{
+		core.age = core.lifetime + 1.0f;
+	}
+
+	Particle3D@ glow;
+	if (this.get(TOOL_BEAM_3D_GLOW, @glow) && glow !is null)
+	{
+		glow.age = glow.lifetime + 1.0f;
+	}
+}
+
+void SetToolBeamArcPoints(Particle3D@ beam, Vec3f origin, Vec3f targetPoint, f32 wobble, f32 phase)
+{
+	if (beam is null)
+		return;
+
+	Vec3f beamVector = targetPoint - origin;
+	if (beamVector.LengthSquared() <= 0.001f)
+		return;
+
+	Vec3f direction = beamVector.Normalize();
+	Vec3f side = Cross(direction, Vec3f(0.0f, 1.0f, 0.0f));
+	if (side.LengthSquared() <= 0.001f)
+	{
+		side = Vec3f(1.0f, 0.0f, 0.0f);
+	}
+	side = side.Normalize();
+
+	Vec3f up = Cross(side, direction);
+	if (up.LengthSquared() <= 0.001f)
+	{
+		up = Vec3f(0.0f, 1.0f, 0.0f);
+	}
+	up = up.Normalize();
+
+	const uint pointCount = 10;
+	beam.trailPoints.clear();
+	for (uint i = 0; i < pointCount; i++)
+	{
+		const f32 t = pointCount <= 1 ? 0.0f : f32(i) / f32(pointCount - 1);
+		Vec3f point = origin + beamVector * t;
+		if (i > 0 && i + 1 < pointCount)
+		{
+			const f32 envelope = Maths::Sin(t * Maths::Pi);
+			const f32 sideWave = Maths::Sin(phase + t * 27.0f) + Maths::Sin(phase * 1.7f + t * 51.0f) * 0.45f;
+			const f32 upWave = Maths::Cos(phase * 1.35f + t * 35.0f) + Maths::Sin(phase * 0.9f + t * 74.0f) * 0.35f;
+			point += side * sideWave * wobble * envelope;
+			point += up * upWave * wobble * 0.55f * envelope;
+		}
+		beam.trailPoints.push_back(point);
+	}
+}
+
+void EmitToolBeamImpact3D(Vec3f targetPoint, Vec3f beamDir, SColor color)
+{
+	if (!getNet().isClient())
+		return;
+
+	Random random(getGameTime() * 349 + Maths::Round(targetPoint.x * 5.0f) + Maths::Round(targetPoint.z * 7.0f));
+	for (int i = 0; i < 3; i++)
+	{
+		Vec3f dir = beamDir * -(0.45f + random.NextFloat() * 0.5f);
+		dir.xzRotateBy((random.NextFloat() - 0.5f) * 105.0f);
+		dir.y += (random.NextFloat() - 0.35f) * 0.65f;
+		if (dir.LengthSquared() <= 0.001f)
+		{
+			dir = Vec3f(0.0f, 1.0f, 0.0f);
+		}
+		dir = dir.Normalize();
+
+		Particle3D@ spark = Particle3D(
+			targetPoint + dir * (0.4f + random.NextFloat() * 1.6f),
+			dir * (1.4f + random.NextFloat() * 2.2f),
+			Vec3f(0.0f, -0.015f, 0.0f),
+			6.0f + random.NextFloat() * 5.0f,
+			1.5f + random.NextFloat() * 1.2f,
+			0.0f,
+			SColor(210, color.getRed(), color.getGreen(), color.getBlue()),
+			SColor(0, color.getRed() / 2, color.getGreen() / 2, color.getBlue() / 2)
+		);
+		spark.damping = 0.88f;
+		spark.stretch = 2.0f;
+		spark.facingMode = ParticleFace3D::CameraVelocity;
+		EmitParticle3D(spark);
+	}
+}
+
+void UpdateToolBeam3D(CBlob@ this, Blob3D@ player3D)
+{
+	if (!getNet().isClient() || !this.isMyPlayer())
+		return;
+
+	const string currentTool = this.get_string("current tool");
+	if ((currentTool != "deconstructor" && currentTool != "reconstructor") || !this.isKeyPressed(key_action1) || this.isAttached() || this.hasTag("dead"))
+	{
+		KillToolBeam3D(this);
+		return;
+	}
+
+	CBlob@ target = getMap().getBlobAtPosition(this.get_Vec2f("aim_pos"));
+	if (target is null || target.getShape().getVars().customData <= 0 || target.hasTag("mothership"))
+	{
+		KillToolBeam3D(this);
+		return;
+	}
+
+	Vec3f targetPoint = GetToolTargetPoint3D(target);
+	Vec3f forward;
+	if (!GetLocalCameraForwardAxis(this, forward))
+	{
+		Vec2f fallback(1.0f, 0.0f);
+		fallback.RotateBy(this.get_f32("dir_x") + 90.0f);
+		forward = Vec3f(fallback.x, 0.0f, fallback.y);
+	}
+	if (forward.LengthSquared() <= 0.001f)
+	{
+		Vec2f fallback(1.0f, 0.0f);
+		fallback.RotateBy(this.get_f32("dir_x") + 90.0f);
+		forward = Vec3f(fallback.x, 0.0f, fallback.y);
+	}
+	forward = forward.Normalize();
+
+	Vec3f origin = GetHumanToolBeamOrigin3D(this, player3D, forward);
+	Vec3f beam = targetPoint - origin;
+	const f32 distance = beam.Length();
+	if (distance <= 1.0f || distance > CONSTRUCT_RANGE + 14.0f)
+	{
+		KillToolBeam3D(this);
+		return;
+	}
+
+	Vec3f direction = beam / distance;
+	const bool reconstructing = currentTool == "reconstructor";
+	SColor coreColor = reconstructing ? SColor(245, 72, 255, 120) : SColor(245, 255, 70, 58);
+	SColor glowColor = reconstructing ? SColor(95, 25, 220, 70) : SColor(95, 255, 24, 18);
+
+	Particle3D@ core = EnsureToolBeamParticle(this, TOOL_BEAM_3D_CORE, false);
+	Particle3D@ glow = EnsureToolBeamParticle(this, TOOL_BEAM_3D_GLOW, true);
+	if (core is null || glow is null)
+		return;
+
+	core.age = 0.0f;
+	core.position = origin;
+	core.velocity = direction;
+	core.startColor = coreColor;
+	core.endColor = coreColor;
+	core.size = 0.85f + Maths::Sin(getGameTime() * 0.45f) * 0.16f;
+	core.startSize = core.size;
+	core.endSize = core.size;
+
+	glow.age = 0.0f;
+	glow.position = origin;
+	glow.velocity = direction;
+	glow.startColor = glowColor;
+	glow.endColor = glowColor;
+	glow.size = 2.5f + Maths::Sin(getGameTime() * 0.28f) * 0.42f;
+	glow.startSize = glow.size;
+	glow.endSize = glow.size;
+
+	const f32 phase = getGameTime() * 0.58f + f32(this.getNetworkID() % 97);
+	const f32 wobble = Maths::Clamp(distance * 0.045f, 1.0f, 3.2f);
+	SetToolBeamArcPoints(core, origin, targetPoint, wobble, phase);
+	SetToolBeamArcPoints(glow, origin, targetPoint, wobble * 0.75f, phase + 1.3f);
+
+	if (getGameTime() % 3 == 0)
+	{
+		EmitToolBeamImpact3D(targetPoint - direction * 1.5f, direction, coreColor);
+	}
 }
 
 void onInit( CBlob@ this )
@@ -788,6 +1026,7 @@ void onTick( CBlob@ this )
 	UpdateAimPosition3D(this);
 
 	Update( this );
+	UpdateToolBeam3D(this, blob3d);
 
 	u32 gameTime = getGameTime();
 
@@ -1605,12 +1844,14 @@ void onDetach( CBlob@ this, CBlob@ detached, AttachmentPoint @attachedPoint )
 {
 	CacheShipStayTransform(this, detached);
 	this.set_u16(SEAT_CAMERA_SNAP_ID, 0);
+	KillToolBeam3D(this);
 }
 
 void onDie( CBlob@ this )
 {
 	CSprite@ sprite = this.getSprite();
 	Vec2f pos = this.getPosition();
+	KillToolBeam3D(this);
 	
 	ParticleBloodSplat( pos, true );
 	directionalSoundPlay( "BodyGibFall", pos );

@@ -336,7 +336,7 @@ void RenderPlayers(Vec3f pos, float[] model)
 			if ( currentTool == "reconstructor" || currentTool == "deconstructor" )
 			{
 				CBlob@ mBlob = getMap().getBlobAtPosition( blob.get_Vec2f("aim_pos") );
-				if (mBlob !is null)
+				if (mBlob !is null && mBlob.getShape().getVars().customData > 0 && !mBlob.hasTag("mothership") && mBlob.getDistanceTo(blob) <= 64.0f)
 				{
 					if (currentTool == "reconstructor")
 					{ outlinename = "BlockOutlineGreen.png"; } 
@@ -345,11 +345,28 @@ void RenderPlayers(Vec3f pos, float[] model)
 					else 
 					{ outlinename = "BlockOutlineWhite.png"; }
 
-					Matrix::SetTranslation(model, blob.getInterpolatedPosition().y/16, 0, blob.getInterpolatedPosition().x/16);
-					Matrix::SetScale(model, 1.03, 1.03, 1.03);
+					Blob3D@ target3d;
+					Vec3f targetPosition(mBlob.getInterpolatedPosition().x, 0.0f, mBlob.getInterpolatedPosition().y);
+					Vec3f targetRotation;
+					f32 targetYaw = mBlob.getAngleDegrees();
+					if (mBlob.get("blob3d", @target3d) && target3d !is null)
+					{
+						targetPosition = target3d.getRenderPosition();
+						targetRotation = target3d.renderRotation;
+						targetYaw = target3d.transform.Orientation.x;
+					}
+
+					Matrix::SetTranslation(model, targetPosition.x, targetPosition.y - 0.08f, targetPosition.z);
+					Matrix::SetRotationDegrees(model, targetRotation.x, targetYaw, targetRotation.z);
+					Matrix::SetScale(model, 16.9f, 32.4f, 16.9f);
 					Render::SetModelTransform(model);
-					//Render::SetAlphaBlend(true);
+					Render::SetAlphaBlend(true);
+					Render::SetBackfaceCull(false);
+					Render::SetZBuffer(true, false);
 					Render::RawTrianglesIndexed( outlinename, box_Vertices, box_IDs);
+					Render::SetZBuffer(true, true);
+					Render::SetBackfaceCull(true);
+					Render::SetAlphaBlend(false);
 				}				
 			}
 

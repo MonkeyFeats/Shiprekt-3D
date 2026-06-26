@@ -46,6 +46,7 @@ shared class Particle3D
     f32 stretch = 1.0f;
     bool segmentedTrail = false;
     bool pointTrail = false;
+    bool uniformTrail = false;
     u8 trailSegments = 5;
     f32 trailLength = 18.0f;
     f32 trailGap = 0.28f;
@@ -329,17 +330,34 @@ shared class ParticleSystem3D
                 right = SafeNormal(Cross(Vec3f(0.0f, 1.0f, 0.0f), travel), Vec3f(1.0f, 0.0f, 0.0f));
             }
 
+            Vec3f tangent0 = i == 0 ? travel : particle.trailPoints[i + 1] - particle.trailPoints[i - 1];
+            Vec3f tangent1 = i + 2 >= particle.trailPoints.length() ? travel : particle.trailPoints[i + 2] - particle.trailPoints[i];
+            tangent0 = SafeNormal(tangent0, travel);
+            tangent1 = SafeNormal(tangent1, travel);
+            Vec3f toCamera0 = SafeNormal(cameraPosition - p0, toCamera);
+            Vec3f toCamera1 = SafeNormal(cameraPosition - p1, toCamera);
+            Vec3f right0Axis = SafeNormal(Cross(toCamera0, tangent0), right);
+            Vec3f right1Axis = SafeNormal(Cross(toCamera1, tangent1), right);
+            if (right0Axis.LengthSquared() <= 0.0001f)
+            {
+                right0Axis = right;
+            }
+            if (right1Axis.LengthSquared() <= 0.0001f)
+            {
+                right1Axis = right;
+            }
+
             const f32 t0 = particle.trailPoints.length() <= 1 ? 0.0f : f32(i) / f32(particle.trailPoints.length() - 1);
             const f32 t1 = f32(i + 1) / f32(particle.trailPoints.length() - 1);
-            const f32 taper0 = Maths::Lerp(0.22f, 1.0f, t0);
-            const f32 taper1 = Maths::Lerp(0.22f, 1.0f, t1);
-            const f32 alpha0Value = Maths::Clamp(f32(baseColor.getAlpha()) * t0, 0.0f, 255.0f);
-            const f32 alpha1Value = Maths::Clamp(f32(baseColor.getAlpha()) * t1, 0.0f, 255.0f);
+            const f32 taper0 = particle.uniformTrail ? 1.0f : Maths::Lerp(0.22f, 1.0f, t0);
+            const f32 taper1 = particle.uniformTrail ? 1.0f : Maths::Lerp(0.22f, 1.0f, t1);
+            const f32 alpha0Value = Maths::Clamp(f32(baseColor.getAlpha()) * (particle.uniformTrail ? 1.0f : t0), 0.0f, 255.0f);
+            const f32 alpha1Value = Maths::Clamp(f32(baseColor.getAlpha()) * (particle.uniformTrail ? 1.0f : t1), 0.0f, 255.0f);
             SColor color0(u8(Maths::Round(alpha0Value)), baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue());
             SColor color1(u8(Maths::Round(alpha1Value)), baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue());
 
-            Vec3f side0 = right * halfWidth * taper0;
-            Vec3f side1 = right * halfWidth * taper1;
+            Vec3f side0 = right0Axis * halfWidth * taper0;
+            Vec3f side1 = right1Axis * halfWidth * taper1;
             Vec3f left0 = p0 - side0;
             Vec3f right0 = p0 + side0;
             Vec3f left1 = p1 - side1;
@@ -372,13 +390,20 @@ shared class ParticleSystem3D
 
         const f32 totalLength = Maths::Max(particle.trailLength, 1.0f);
         const f32 stepLength = totalLength / f32(segments);
+        const f32 gap = Maths::Clamp(particle.trailGap, 0.0f, 0.82f);
+        const f32 segmentInset = stepLength * gap * 0.5f;
         SColor baseColor = particle.GetColor();
         Vertex[] vertices;
 
         for (uint i = 0; i < segments; i++)
         {
-            const f32 t0 = f32(i) / f32(segments);
-            const f32 t1 = f32(i + 1) / f32(segments);
+            const f32 d0 = stepLength * f32(i) + segmentInset;
+            const f32 d1 = stepLength * f32(i + 1) - segmentInset;
+            if (d1 <= d0)
+                continue;
+
+            const f32 t0 = d0 / totalLength;
+            const f32 t1 = d1 / totalLength;
             const f32 taper0 = Maths::Lerp(1.0f, 0.28f, t0);
             const f32 taper1 = Maths::Lerp(1.0f, 0.28f, t1);
             const f32 alpha0Value = Maths::Clamp(f32(baseColor.getAlpha()) * (1.0f - t0 * 0.75f), 0.0f, 255.0f);
@@ -386,8 +411,8 @@ shared class ParticleSystem3D
             SColor color0(u8(Maths::Round(alpha0Value)), baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue());
             SColor color1(u8(Maths::Round(alpha1Value)), baseColor.getRed(), baseColor.getGreen(), baseColor.getBlue());
 
-            Vec3f p0 = particle.position + travel * (stepLength * f32(i));
-            Vec3f p1 = particle.position + travel * (stepLength * f32(i + 1));
+            Vec3f p0 = particle.position + travel * d0;
+            Vec3f p1 = particle.position + travel * d1;
             Vec3f side0 = right * halfWidth * taper0;
             Vec3f side1 = right * halfWidth * taper1;
             Vec3f left0 = p0 - side0;

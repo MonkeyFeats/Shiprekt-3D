@@ -1431,6 +1431,7 @@ bool canShootPistol( CBlob@ this )
 bool canConstruct( CBlob@ this )
 {
 	return !this.hasTag( "dead" ) && (this.get_string( "current tool" ) == "deconstructor" || this.get_string( "current tool" ) == "reconstructor")
+				&& !Human::isHoldingBlocks(this)
 				&& this.get_u32("fire time") + CONSTRUCT_RATE < getGameTime();
 }
 

@@ -62,6 +62,8 @@ void ProduceBlock( CRules@ this, CBlob@ blob, Block::Type[] types)
 		}
 
 		DebugProduceBlock("ProduceBlock begin caller=" + blob.getNetworkID() + " player=" + player.getUsername() + " team=" + blobTeam + " requestedTypes=" + types.length);
+		blob.set_string("current tool", "fists");
+		blob.Sync("current tool", true);
 
 		CBlob@[] blocks;
 		for ( int i = 0; i < types.length; i++ )

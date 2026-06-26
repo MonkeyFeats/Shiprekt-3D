@@ -124,6 +124,136 @@ void SetBlob3DPreviewTint(Blob3D@ blob3d, SColor color, SMaterial::BlendType ble
 	}
 }
 
+void SetWireframeColorMask(SMaterial@ material, int colorMask)
+{
+	if (material is null)
+	{
+		return;
+	}
+
+	switch (colorMask)
+	{
+		case 0:
+			material.SetColorMask(SMaterial::RED);
+			break;
+
+		case 1:
+			material.SetColorMask(SMaterial::GREEN);
+			break;
+
+		case 2:
+			material.SetColorMask(SMaterial::BLUE);
+			break;
+
+		default:
+			material.SetColorMask(SMaterial::RGB);
+			break;
+	}
+}
+
+SMaterial@ CreateWireframeMaterial(int colorMask)
+{
+	SMaterial@ material = SMaterial();
+	material.DisableAllFlags();
+	material.SetFlag(SMaterial::COLOR_MASK, true);
+	material.SetFlag(SMaterial::ZBUFFER, true);
+	material.SetFlag(SMaterial::ZWRITE_ENABLE, true);
+	material.SetFlag(SMaterial::BACK_FACE_CULLING, false);
+	material.SetFlag(SMaterial::WIREFRAME, true);
+	material.SetFlag(SMaterial::LIGHTING, false);
+	material.SetFlag(SMaterial::FOG_ENABLE, false);
+	material.SetFlag(SMaterial::GOURAUD_SHADING, false);
+	SetWireframeColorMask(material, colorMask);
+	material.SetMaterialType(SMaterial::SOLID);
+	return material;
+}
+
+void PushBlob3DWireframeMaterial(Blob3D@ blob3d, int colorMask, SMesh@[]@ meshes, SMaterial@[]@ materials)
+{
+	if (blob3d is null)
+	{
+		return;
+	}
+
+	if (blob3d.HasMesh && blob3d.mesh !is null)
+	{
+		SMaterial@ material = blob3d.mesh.GetMaterial();
+		if (material !is null)
+		{
+			meshes.push_back(@blob3d.mesh);
+			materials.push_back(@material);
+			blob3d.mesh.SetMaterial(CreateWireframeMaterial(colorMask));
+		}
+	}
+
+	for (uint i = 0; i < blob3d.Children.length(); ++i)
+	{
+		Blob3D@ child = blob3d.Children[i];
+		if (child !is null && child.Name != "core_crystal")
+		{
+			PushBlob3DWireframeMaterial(child, colorMask, meshes, materials);
+		}
+	}
+}
+
+void RestoreBlob3DWireframeMaterial(SMesh@[]@ meshes, SMaterial@[]@ materials)
+{
+	if (meshes is null || materials is null)
+	{
+		return;
+	}
+
+	const uint count = Maths::Min(meshes.length(), materials.length());
+	for (uint i = 0; i < count; ++i)
+	{
+		if (meshes[i] !is null && materials[i] !is null)
+		{
+			meshes[i].SetMaterial(materials[i]);
+		}
+	}
+}
+
+void ScaleBlob3DRenderScale(Blob3D@ blob3d, f32 scale)
+{
+	if (blob3d is null)
+	{
+		return;
+	}
+
+	blob3d.renderScale *= scale;
+	for (uint i = 0; i < blob3d.Children.length(); ++i)
+	{
+		Blob3D@ child = blob3d.Children[i];
+		if (child !is null && child.Name != "core_crystal")
+		{
+			ScaleBlob3DRenderScale(child, scale);
+		}
+	}
+}
+
+void RenderBlob3DWireframe(Blob3D@ blob3d, float[] model, int colorMask)
+{
+	if (blob3d is null)
+	{
+		return;
+	}
+
+	const f32 wireScale = 1.012f;
+	SMesh@[] meshes;
+	SMaterial@[] materials;
+	ScaleBlob3DRenderScale(blob3d, wireScale);
+	PushBlob3DWireframeMaterial(blob3d, colorMask, @meshes, @materials);
+	Render::SetAlphaBlend(true);
+	Render::SetBackfaceCull(false);
+	Render::SetZBuffer(true, true);
+	blob3d.Render(model);
+	Render::SetZBuffer(true, true);
+	Render::SetBackfaceCull(true);
+	Render::SetAlphaBlend(false);
+	RestoreBlob3DWireframeMaterial(@meshes, @materials);
+	ScaleBlob3DRenderScale(blob3d, 1.0f / wireScale);
+}
+
 void RenderHeldBlockMesh(CBlob@ block, float[] model, bool blocked)
 {
 	Blob3D@ blob3d;
@@ -143,6 +273,24 @@ void RenderHeldBlockMesh(CBlob@ block, float[] model, bool blocked)
 	blob3d.Render(model);
 
 	SetBlob3DPreviewTint(blob3d, color_white, SMaterial::ADD);
+}
+
+void RenderHeldBlockWireframe(CBlob@ block, float[] model, bool blocked)
+{
+	Blob3D@ blob3d;
+	if (!block.get("blob3d", @blob3d) || blob3d is null)
+	{
+		return;
+	}
+
+	Vec2f blockPos = block.getPosition();
+	blob3d.transform.Position.x = blockPos.x;
+	blob3d.transform.Position.y = 0.0f;
+	blob3d.transform.Position.z = blockPos.y;
+	blob3d.transform.Orientation.x = block.getAngleDegrees();
+
+	const int wireColor = blocked ? 0 : 2;
+	RenderBlob3DWireframe(blob3d, model, wireColor);
 }
 
 void RenderHeldBlockBlueprints(CBlob@ blob, float[] model)
@@ -167,31 +315,12 @@ void RenderHeldBlockBlueprints(CBlob@ blob, float[] model)
 		}
 
 		const bool blocked = block.get_bool("red");
-		string outlinename = "BlockOutlineGreen.png";
-		SColor blueprintColor = SColor(72, 70, 220, 255);
-		if (blocked)
-		{
-			outlinename = "BlockOutlineRed.png";
-			blueprintColor = SColor(72, 255, 55, 55);
-		}
-		Vec2f blockPos = block.getPosition();
-
 		Blob3D@ blob3d;
-		Vec3f renderOffset;
-		Vec3f renderRotation;
 		if (block.get("blob3d", @blob3d) && blob3d !is null)
 		{
-			renderOffset = blob3d.renderOffset;
-			renderRotation = blob3d.renderRotation;
+			RenderHeldBlockMesh(block, model, blocked);
+			RenderHeldBlockWireframe(block, model, blocked);
 		}
-
-		SetBlueprintTransform(model, blockPos, block.getAngleDegrees(), renderOffset.y - 0.05f, renderRotation);
-		RenderBlueprintVolume(blueprintColor);
-
-		RenderHeldBlockMesh(block, model, blocked);
-
-		SetBlueprintTransform(model, blockPos, block.getAngleDegrees(), renderOffset.y - 0.04f, renderRotation);
-		Render::RawTrianglesIndexed(outlinename, BlueprintBoxVertices(), box_IDs);
 	}
 }
 
@@ -320,7 +449,6 @@ void RenderProps(float dirX, float dirY, f32 waterheight)
 
 void RenderPlayers(Vec3f pos, float[] model)
 {
-	string outlinename = "BlockOutlineGreen.png";
 	CBlob@[] blobs;
 	getBlobsByName("human", @blobs);
 	for(int i = 0; i < blobs.length; i++)
@@ -338,35 +466,17 @@ void RenderPlayers(Vec3f pos, float[] model)
 				CBlob@ mBlob = getMap().getBlobAtPosition( blob.get_Vec2f("aim_pos") );
 				if (mBlob !is null && mBlob.getShape().getVars().customData > 0 && !mBlob.hasTag("mothership") && mBlob.getDistanceTo(blob) <= 64.0f)
 				{
+					int wireColor = 2;
 					if (currentTool == "reconstructor")
-					{ outlinename = "BlockOutlineGreen.png"; } 
+					{ wireColor = 1; }
 					else if (currentTool == "deconstructor")
-					{ outlinename = "BlockOutlineRed.png"; }
-					else 
-					{ outlinename = "BlockOutlineWhite.png"; }
+					{ wireColor = 0; }
 
 					Blob3D@ target3d;
-					Vec3f targetPosition(mBlob.getInterpolatedPosition().x, 0.0f, mBlob.getInterpolatedPosition().y);
-					Vec3f targetRotation;
-					f32 targetYaw = mBlob.getAngleDegrees();
 					if (mBlob.get("blob3d", @target3d) && target3d !is null)
 					{
-						targetPosition = target3d.getRenderPosition();
-						targetRotation = target3d.renderRotation;
-						targetYaw = target3d.transform.Orientation.x;
+						RenderBlob3DWireframe(target3d, model, wireColor);
 					}
-
-					Matrix::SetTranslation(model, targetPosition.x, targetPosition.y - 0.08f, targetPosition.z);
-					Matrix::SetRotationDegrees(model, targetRotation.x, targetYaw, targetRotation.z);
-					Matrix::SetScale(model, 16.9f, 32.4f, 16.9f);
-					Render::SetModelTransform(model);
-					Render::SetAlphaBlend(true);
-					Render::SetBackfaceCull(false);
-					Render::SetZBuffer(true, false);
-					Render::RawTrianglesIndexed( outlinename, box_Vertices, box_IDs);
-					Render::SetZBuffer(true, true);
-					Render::SetBackfaceCull(true);
-					Render::SetAlphaBlend(false);
 				}				
 			}
 

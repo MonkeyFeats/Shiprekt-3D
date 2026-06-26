@@ -3,6 +3,7 @@
 #include "SAT_Shapes.as"
 #include "BlockCommon.as"
 #include "Raycast3D.as"
+#include "HumanCommon.as"
 
 const f32 rotate_speed = 30.0f;
 const f32 max_build_distance = 32.0f;
@@ -21,6 +22,63 @@ void onInit( CBlob@ this )
 	SetPlacementPoint(this, V2toV3(this.getPosition(), Raycast3D::GetBuildPlaneY(this)), false, false);
 
     this.addCommandID("place");
+}
+
+bool ShouldCancelHeldBlockPlacement(CBlob@ this)
+{
+	if (this is null || this.hasTag("dead") || this.isAttached())
+	{
+		return true;
+	}
+
+	Blob3D@ blob3d;
+	return this.get("blob3d", @blob3d) && blob3d !is null && blob3d.shape !is null && blob3d.shape.inWater;
+}
+
+void CancelHeldBlockPlacement(CBlob@ this)
+{
+	CBlob@[]@ blocks;
+	if (!this.get("blocks", @blocks) || blocks.size() == 0)
+	{
+		return;
+	}
+
+	if (getNet().isServer())
+	{
+		Human::clearHeldBlocks(this);
+	}
+	else
+	{
+		for (uint i = 0; i < blocks.length; ++i)
+		{
+			if (blocks[i] !is null)
+			{
+				blocks[i].Tag("disabled");
+			}
+		}
+		blocks.clear();
+	}
+
+	this.set_bool("blockPlacementWarn", false);
+	this.set_string("current tool", "fists");
+	if (getNet().isServer())
+	{
+		this.Sync("current tool", true);
+	}
+}
+
+void ForceFistsWhilePlacing(CBlob@ this)
+{
+	if (this.get_string("current tool") == "fists")
+	{
+		return;
+	}
+
+	this.set_string("current tool", "fists");
+	if (getNet().isServer())
+	{
+		this.Sync("current tool", true);
+	}
 }
 
 bool GetWaveBuildSurfaceHit(CBlob@ builder, Island@ island, Raycast3D::RaycastHit3D &out surfaceHit, bool &out blockedByBlock)
@@ -59,6 +117,14 @@ void onTick( CBlob@ this )
     CBlob@[]@ blocks;
     if (this.get( "blocks", @blocks ) && blocks.size() > 0)
     {
+		ForceFistsWhilePlacing(this);
+
+		if (ShouldCancelHeldBlockPlacement(this))
+		{
+			CancelHeldBlockPlacement(this);
+			return;
+		}
+
 		Vec2f pos = this.getPosition();
 		CMap@ map = getMap();
 		Tile tile = map.getTile( pos );
@@ -411,6 +477,11 @@ void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
         }
 		
 		blocks.clear();//releases the blocks (they are placed)
+		this.set_string("current tool", "fists");
+		if (getNet().isServer())
+		{
+			this.Sync("current tool", true);
+		}
 		getRules().set_bool("dirty islands", true);
 		directionalSoundPlay( "build_ladder.ogg", this.getPosition() );
     }

@@ -13,6 +13,13 @@ void HarpoonForces(CBlob@ this,
 					 float &out angleVel)
 {
 	Island@ movingIsland = getIsland(hitBlob.getShape().getVars().customData);
+	if (movingIsland is null)
+	{
+		moveVel = Vec2f_zero;
+		moveNorm = Vec2f_zero;
+		angleVel = 0.0f;
+		return;
+	}
 
 	Vec2f pos = this.getPosition();
 
@@ -29,7 +36,8 @@ void HarpoonForces(CBlob@ this,
 	f32 dist = 35.0f;
 	f32 harpoonLength = (hitBlob.getPosition() - this.getPosition()).getLength();
 	f32 centerMag = (dist - Maths::Min( dist, fromCenterLen ))/dist;
-	f32 velCoef = (directionMag + centerMag)*0.5f + (harpoonLength - Maths::Pow(harpoon_grapple_length, 2));
+	f32 stretch = Maths::Clamp((harpoonLength - harpoon_grapple_length) / harpoon_grapple_length, 0.0f, 1.0f);
+	f32 velCoef = Maths::Clamp(((directionMag + centerMag) * 0.5f + stretch) * Maths::Abs(power), 0.0f, 1.5f);
 
 	moveVel *= velCoef;
 

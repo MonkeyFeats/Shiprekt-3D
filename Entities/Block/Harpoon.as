@@ -3,15 +3,21 @@
 #include "WaterEffects.as"
 #include "HarpoonForceCommon.as"
 #include "ParticleSparks.as"
+#include "Blob3D.as"
+#include "Particle3D.as"
 
 const int FIRE_RATE = 45;
 const f32 harpoon_grapple_length = 300.0f;
 const f32 harpoon_grapple_slack = 16.0f;
 const f32 harpoon_grapple_throw_speed = 20.0f;
-
 const f32 harpoon_grapple_force = 2.0f;
 const f32 harpoon_grapple_accel_limit = 1.5f;
 const f32 harpoon_grapple_stiffness = 0.1f;
+const Vec3f HARPOON_LOADED_HEAD_POSITION(0.0f, 0.0f, 8.0f);
+const string HARPOON_HEAD_CHILD = "harpoon_projectile_head";
+const string HARPOON_GUN_CHILD = "harpoon_gun";
+const string HARPOON_LOADED_HEAD_CHILD = "harpoon_loaded_head";
+const string HARPOON_ROPE_PARTICLE = "harpoon_rope_particle";
 
 Random _shotspreadrandom(0x11598); //clientside
 
@@ -38,6 +44,13 @@ void onInit( CBlob@ this )
 {
 	this.Tag("harpoon");
 	this.Tag("weapon");
+	this.set_f32("angle", this.getAngleDegrees());
+
+	if (getNet().isServer())
+	{
+		this.set_bool("seatEnabled", true);
+		this.Sync("seatEnabled", true);
+	}
 
 	CSprite@ sprite = this.getSprite();
 	
@@ -67,7 +80,10 @@ void onInit( CBlob@ this )
 void onTick( CBlob@ this )
 {	
 	if (this.getShape().getVars().customData <= 0)
+	{
+		ClearHarpoonVisuals3D(this);
 		return;
+	}
 	
 	HarpoonInfo@ harpoon;
 	if (!this.get( "harpoonInfo", @harpoon )) {
@@ -80,6 +96,8 @@ void onTick( CBlob@ this )
 	Island@ thisIsland = getIsland(this.getShape().getVars().customData);
 	
 	doRopeUpdate(sprite, this, harpoon);
+	UpdateHarpoonVisuals3D(this, harpoon);
+	RefreshHarpoonGun3D(this);
 	
 	if (harpoon.grappling == false)
 		layer.SetAnimation("set");
@@ -99,10 +117,11 @@ void onTick( CBlob@ this )
 				harpoon.grappling = true;
 				harpoon.grapple_id = 0xffff;
 				harpoon.grapple_pos = pos;
+				Vec2f aimVector = GetHarpoonAimVector(this, occupier);
 				sprite.PlaySound("HookShot.ogg", 1.0f, XORRandom(2) == 1 ? 1.0f : 1.5f);
 				CParticle@ p = ParticleAnimated( "Entities/Effects/Sprites/WhitePuff.png",
 									this.getPosition(),
-									this.getVelocity()*0.5f + (occupier.getAimPos() - this.getPosition())/(occupier.getAimPos() - this.getPosition()).getLength(),
+									this.getVelocity()*0.5f + aimVector,
 									1.0f, 0.5f, 
 									2, 
 									0.0f, true );			
@@ -114,18 +133,7 @@ void onTick( CBlob@ this )
 
 				harpoon.grapple_ratio = 1.0f; //allow fully extended
 
-				Vec2f direction = occupier.getAimPos() - pos;
-
-				// more intuitive aiming (compensates for gravity and cursor position)
-				f32 distance = direction.Normalize();
-				if (distance > 1.0f)
-				{	
-					harpoon.grapple_vel = direction * harpoon_grapple_throw_speed;
-				}
-				else
-					{
-					harpoon.grapple_vel = Vec2f_zero;
-				}
+				harpoon.grapple_vel = aimVector * harpoon_grapple_throw_speed;
 
 				SyncGrapple( this );
 			}
@@ -317,7 +325,7 @@ void onTick( CBlob@ this )
 							
 							// Pull the islands together
 							Island@ hitIsland = getIsland(b.getShape().getVars().customData);
-							if (hitIsland !is null)
+							if (hitIsland !is null && thisIsland !is null)
 							{
 								bool isMyIsland = hitIsland.id == thisIsland.id;
 								bool ropeTooLong = (harpoon.grapple_pos - this.getPosition()).getLength() > harpoon_grapple_length;
@@ -327,14 +335,14 @@ void onTick( CBlob@ this )
 									Vec2f moveNorm;
 									float angleVel;	
 								
-									const f32 hitMass = hitIsland.mass;
+									const f32 hitMass = Maths::Max(1.0f, hitIsland.mass);
 									HarpoonForces(this, b, -1.0f, moveVel, moveNorm, angleVel);
 									moveVel /= hitMass;
 									angleVel /= hitMass;
 									hitIsland.vel += moveVel;
 									hitIsland.angle_vel += angleVel*2.0f;
 									
-									const f32 thisMass = thisIsland.mass;
+									const f32 thisMass = Maths::Max(1.0f, thisIsland.mass);
 									HarpoonForces(b, this, -1.0f, moveVel, moveNorm, angleVel);
 									moveVel /= thisMass;
 									angleVel /= thisMass;
@@ -363,18 +371,82 @@ void onTick( CBlob@ this )
 
 void Manual( CBlob@ this, CBlob@ occupier )
 {
-	Vec2f aimpos = occupier.getAimPos();
-	Vec2f pos = this.getPosition();
-	Vec2f aimvector = aimpos - pos;	
+	Vec2f aimvector = GetHarpoonAimVector(this, occupier);
 
 	// rotate muzzle
 	Rotate( this, aimvector );
+	UpdateHarpoonGun3D(this, aimvector);
 	
 	occupier.setAngleDegrees( -aimvector.getAngleDegrees() );
 }
 
+Vec2f GetHarpoonAimVector(CBlob@ this, CBlob@ occupier)
+{
+	if (occupier !is null && occupier.exists("dir_x"))
+	{
+		Vec2f cameraForward(1.0f, 0.0f);
+		cameraForward.RotateBy(occupier.get_f32("dir_x") + 90.0f);
+		if (cameraForward.LengthSquared() > 0.001f)
+		{
+			cameraForward.Normalize();
+			return cameraForward;
+		}
+	}
+
+	Vec2f aimvector = occupier !is null ? occupier.get_Vec2f("aim_pos") - this.getPosition() : Vec2f(1.0f, 0.0f);
+	if (aimvector.LengthSquared() <= 0.001f)
+	{
+		aimvector = Vec2f(1.0f, 0.0f);
+	}
+	aimvector.Normalize();
+	return aimvector;
+}
+
+void UpdateHarpoonGun3D(CBlob@ this, Vec2f aimvector)
+{
+	if (aimvector.LengthSquared() > 0.001f)
+	{
+		this.set_f32("angle", -aimvector.Angle());
+	}
+
+	RefreshHarpoonGun3D(this);
+}
+
+void RefreshHarpoonGun3D(CBlob@ this)
+{
+	if (!getNet().isClient())
+		return;
+
+	Blob3D@ harpoon3d;
+	if (!this.get("blob3d", @harpoon3d) || harpoon3d is null)
+		return;
+
+	Blob3D@ gun = harpoon3d.getChild(HARPOON_GUN_CHILD);
+	if (gun is null)
+		return;
+
+	const f32 yaw = this.get_f32("angle") - this.getAngleDegrees();
+	gun.setLocalMayaRotation(Vec3f(0.0f, yaw, 0.0f));
+
+	HarpoonInfo@ harpoon;
+	Blob3D@ loadedHead = gun.getChild(HARPOON_LOADED_HEAD_CHILD);
+	if (loadedHead !is null && this.get("harpoonInfo", @harpoon) && harpoon !is null)
+	{
+		loadedHead.LocalTransform.Position = HARPOON_LOADED_HEAD_POSITION;
+		loadedHead.LocalTransform.Orientation.x = 0.0f;
+		loadedHead.LocalTransform.Orientation.y = 0.0f;
+		loadedHead.LocalTransform.Orientation.z = 0.0f;
+		loadedHead.renderScale = harpoon.grappling ? 0.0f : 1.0f;
+	}
+}
+
 void Rotate( CBlob@ this, Vec2f aimvector )
 {
+	if (aimvector.LengthSquared() > 0.001f)
+	{
+		this.set_f32("angle", -aimvector.getAngleDegrees());
+	}
+
 	CSpriteLayer@ layer = this.getSprite().getSpriteLayer("harpoon");
 	if(layer !is null)
 	{
@@ -569,12 +641,14 @@ void doRopeUpdate(CSprite@ this, CBlob@ blob, HarpoonInfo@ harpoon)
 	}
 
 
-	hook.SetVisible(visible);
+	hook.SetVisible(false);
 	if(!visible)
 	{
 		harpoon.reeling = false;
 		return;
 	}
+	rope.SetVisible(false);
+	looseRope.SetVisible(false);
 
 
 	Vec2f off = harpoon.grapple_pos - blob.getPosition();
@@ -674,6 +748,191 @@ bool shouldReleaseGrapple(CBlob@ this, HarpoonInfo@ harpoon, CMap@ map)
 bool canSend( CBlob@ occupier )
 {
 	return true;
+}
+
+void ApplyHarpoonHeadMeshSettings(SMesh@ mesh)
+{
+	if (mesh is null)
+		return;
+
+	SMaterial@ material = mesh.GetMaterial();
+	if (material is null)
+		return;
+
+	material.SetFlag(SMaterial::LIGHTING, false);
+	material.SetFlag(SMaterial::BILINEAR_FILTER, false);
+	material.SetLayerBilinearFilter(0, false);
+	material.SetMaterialType(SMaterial::SOLID);
+}
+
+Blob3D@ EnsureHarpoonHead3D(CBlob@ this)
+{
+	if (!getNet().isClient() || this is null)
+		return null;
+
+	Blob3D@ harpoon3d;
+	if (!this.get("blob3d", @harpoon3d) || harpoon3d is null)
+		return null;
+
+	Blob3D@ head = harpoon3d.getChild(HARPOON_HEAD_CHILD);
+	if (head !is null)
+		return head;
+
+	Blob3D newHead(Vec3f(), this.getTeamNum(), 1.0f);
+	newHead.Name = HARPOON_HEAD_CHILD;
+	newHead.mesh.LoadObjIntoMesh("HarpoonHead.obj");
+	newHead.mesh.SetHardwareMapping(SMesh::STATIC);
+	ApplyHarpoonHeadMeshSettings(newHead.mesh);
+	newHead.mesh.BuildMesh();
+	newHead.HasMesh = true;
+	newHead.renderScale = 0.0f;
+	harpoon3d.AddChild(@newHead);
+	return harpoon3d.getChild(HARPOON_HEAD_CHILD);
+}
+
+Blob3D@ GetHarpoonHead3D(CBlob@ this)
+{
+	if (!getNet().isClient() || this is null)
+		return null;
+
+	Blob3D@ harpoon3d;
+	if (!this.get("blob3d", @harpoon3d) || harpoon3d is null)
+		return null;
+
+	return harpoon3d.getChild(HARPOON_HEAD_CHILD);
+}
+
+Particle3D@ EnsureHarpoonRope3D(CBlob@ this)
+{
+	if (!getNet().isClient() || this is null)
+		return null;
+
+	Particle3D@ rope;
+	if (this.get(HARPOON_ROPE_PARTICLE, @rope) && rope !is null)
+	{
+		if (!rope.IsAlive())
+		{
+			rope.age = 0.0f;
+			EmitParticle3D(rope);
+		}
+		return rope;
+	}
+
+	@rope = Particle3D();
+	rope.pointTrail = true;
+	rope.uniformTrail = true;
+	rope.tileTrailTexture = true;
+	rope.IsStatic = true;
+	rope.persistent = true;
+	rope.lifetime = 999999.0f;
+	rope.textureName = "Rope.png";
+	rope.maxTrailPoints = 2;
+	rope.trailTextureLength = 16.0f;
+	rope.startSize = 2.2f;
+	rope.endSize = 2.2f;
+	rope.size = 2.2f;
+	rope.startColor = SColor(255, 255, 255, 255);
+	rope.endColor = SColor(255, 255, 255, 255);
+	this.set(HARPOON_ROPE_PARTICLE, @rope);
+	EmitParticle3D(rope);
+	return rope;
+}
+
+Vec3f GetHarpoonBasePoint3D(CBlob@ this)
+{
+	Blob3D@ harpoon3d;
+	if (this !is null && this.get("blob3d", @harpoon3d) && harpoon3d !is null)
+	{
+		Vec3f pos = harpoon3d.getRenderPosition();
+		pos.y += 8.0f;
+		return pos;
+	}
+
+	return Vec3f(this.getPosition().x, 8.0f, this.getPosition().y);
+}
+
+Vec3f GetHarpoonGrapplePoint3D(CBlob@ this, HarpoonInfo@ harpoon)
+{
+	if (harpoon !is null && harpoon.grapple_id != 0xffff && harpoon.grapple_id != 0)
+	{
+		CBlob@ hit = getBlobByNetworkID(harpoon.grapple_id);
+		Blob3D@ hit3d;
+		if (hit !is null && hit.get("blob3d", @hit3d) && hit3d !is null)
+		{
+			Vec3f hitPos = hit3d.getRenderPosition();
+			hitPos.y += 8.0f;
+			return hitPos;
+		}
+	}
+
+	return GetRenderedParticlePosition(this, harpoon.grapple_pos, 8.0f);
+}
+
+void ClearHarpoonVisuals3D(CBlob@ this)
+{
+	Particle3D@ rope;
+	if (this.get(HARPOON_ROPE_PARTICLE, @rope) && rope !is null)
+	{
+		rope.trailPoints.clear();
+		rope.age = rope.lifetime + 1.0f;
+	}
+
+	Blob3D@ head = GetHarpoonHead3D(this);
+	if (head !is null)
+	{
+		head.renderScale = 0.0f;
+	}
+}
+
+void UpdateHarpoonVisuals3D(CBlob@ this, HarpoonInfo@ harpoon)
+{
+	if (!getNet().isClient() || this is null || harpoon is null)
+		return;
+
+	const bool visible = harpoon.grappling;
+	if (!visible)
+	{
+		ClearHarpoonVisuals3D(this);
+		return;
+	}
+
+	Vec3f basePoint = GetHarpoonBasePoint3D(this);
+	Vec3f grapplePoint = GetHarpoonGrapplePoint3D(this, harpoon);
+	Vec3f ropeVector = grapplePoint - basePoint;
+	if (ropeVector.LengthSquared() <= 0.001f)
+	{
+		ClearHarpoonVisuals3D(this);
+		return;
+	}
+
+	Particle3D@ rope = EnsureHarpoonRope3D(this);
+	if (rope !is null)
+	{
+		rope.age = 0.0f;
+		rope.position = basePoint;
+		rope.trailPoints.clear();
+		rope.trailPoints.push_back(basePoint);
+		rope.trailPoints.push_back(grapplePoint);
+		rope.size = 2.2f;
+		rope.startSize = rope.size;
+		rope.endSize = rope.size;
+	}
+
+	Blob3D@ harpoon3d;
+	Blob3D@ head = EnsureHarpoonHead3D(this);
+	if (this.get("blob3d", @harpoon3d) && harpoon3d !is null && head !is null)
+	{
+		Vec3f localPos = grapplePoint - harpoon3d.getRenderPosition();
+		localPos.xzRotateBy(-harpoon3d.transform.Orientation.x);
+		head.LocalTransform.Position = localPos;
+
+		Vec2f aim2D = (grapplePoint - basePoint).xz();
+		f32 headYaw = aim2D.LengthSquared() > 0.001f ? -aim2D.Angle() : harpoon.cache_angle;
+		head.LocalTransform.Orientation.x = headYaw - harpoon3d.transform.Orientation.x;
+		head.LocalTransform.Orientation.y = 0.0f;
+		head.LocalTransform.Orientation.z = 0.0f;
+		head.renderScale = 1.0f;
+	}
 }
 
 void GetButtonsFor( CBlob@ this, CBlob@ caller )

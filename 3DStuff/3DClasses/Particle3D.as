@@ -47,9 +47,11 @@ shared class Particle3D
     bool segmentedTrail = false;
     bool pointTrail = false;
     bool uniformTrail = false;
+    bool tileTrailTexture = false;
     u8 trailSegments = 5;
     f32 trailLength = 18.0f;
     f32 trailGap = 0.28f;
+    f32 trailTextureLength = 16.0f;
     u8 maxTrailPoints = 36;
     Vec3f[] trailPoints;
 
@@ -312,16 +314,18 @@ shared class ParticleSystem3D
 
         SColor baseColor = particle.GetColor();
         Vertex[] vertices;
+        f32 tiledDistance = 0.0f;
 
         for (uint i = 0; i + 1 < particle.trailPoints.length(); i++)
         {
             Vec3f p0 = particle.trailPoints[i];
             Vec3f p1 = particle.trailPoints[i + 1];
             Vec3f travel = p1 - p0;
-            if (travel.LengthSquared() <= 0.001f)
+            const f32 segmentLength = travel.Length();
+            if (segmentLength <= 0.001f)
                 continue;
 
-            travel = travel.Normalize();
+            travel = travel / segmentLength;
             Vec3f mid = (p0 + p1) * 0.5f;
             Vec3f toCamera = SafeNormal(cameraPosition - mid, Vec3f(0.0f, 0.0f, 1.0f));
             Vec3f right = SafeNormal(Cross(toCamera, travel), Vec3f(1.0f, 0.0f, 0.0f));
@@ -349,6 +353,9 @@ shared class ParticleSystem3D
 
             const f32 t0 = particle.trailPoints.length() <= 1 ? 0.0f : f32(i) / f32(particle.trailPoints.length() - 1);
             const f32 t1 = f32(i + 1) / f32(particle.trailPoints.length() - 1);
+            const f32 v0 = particle.tileTrailTexture ? tiledDistance / Maths::Max(particle.trailTextureLength, 1.0f) : t0;
+            tiledDistance += segmentLength;
+            const f32 v1 = particle.tileTrailTexture ? tiledDistance / Maths::Max(particle.trailTextureLength, 1.0f) : t1;
             const f32 taper0 = particle.uniformTrail ? 1.0f : Maths::Lerp(0.22f, 1.0f, t0);
             const f32 taper1 = particle.uniformTrail ? 1.0f : Maths::Lerp(0.22f, 1.0f, t1);
             const f32 alpha0Value = Maths::Clamp(f32(baseColor.getAlpha()) * (particle.uniformTrail ? 1.0f : t0), 0.0f, 255.0f);
@@ -363,12 +370,12 @@ shared class ParticleSystem3D
             Vec3f left1 = p1 - side1;
             Vec3f right1 = p1 + side1;
 
-            vertices.push_back(Vertex(right1.x, right1.y, right1.z, 1, t1, color1));
-            vertices.push_back(Vertex(left1.x, left1.y, left1.z, 0, t1, color1));
-            vertices.push_back(Vertex(left0.x, left0.y, left0.z, 0, t0, color0));
-            vertices.push_back(Vertex(right1.x, right1.y, right1.z, 1, t1, color1));
-            vertices.push_back(Vertex(left0.x, left0.y, left0.z, 0, t0, color0));
-            vertices.push_back(Vertex(right0.x, right0.y, right0.z, 1, t0, color0));
+            vertices.push_back(Vertex(right1.x, right1.y, right1.z, 1, v1, color1));
+            vertices.push_back(Vertex(left1.x, left1.y, left1.z, 0, v1, color1));
+            vertices.push_back(Vertex(left0.x, left0.y, left0.z, 0, v0, color0));
+            vertices.push_back(Vertex(right1.x, right1.y, right1.z, 1, v1, color1));
+            vertices.push_back(Vertex(left0.x, left0.y, left0.z, 0, v0, color0));
+            vertices.push_back(Vertex(right0.x, right0.y, right0.z, 1, v0, color0));
         }
 
         Render::RawTriangles(particle.textureName, vertices);

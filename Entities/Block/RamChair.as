@@ -8,6 +8,7 @@ const u16 COUPLINGS_COOLDOWN = 8 * 30;
 const u16 CREW_COUPLINGS_LEASE = 10 * 30;//time till the captain can control crew's couplings
 const u16 UNUSED_RESET = 2 * 60 * 30;
 const u8 CANNON_FIRE_CYCLE = 15;
+const bool MIRROR_SHIP_STEERING_HORIZONTAL = true;
 
 void onInit( CBlob@ this )
 {
@@ -127,8 +128,10 @@ void onTick( CBlob@ this )
 		const bool canHijack = seatOwner == island.owner && occupierTeam != teamNum;
 			
 		const bool up = occupier.isKeyPressed( key_up );
-		const bool left = occupier.isKeyPressed( key_left );
-		const bool right = occupier.isKeyPressed( key_right );
+		const bool rawLeft = occupier.isKeyPressed( key_left );
+		const bool rawRight = occupier.isKeyPressed( key_right );
+		const bool left = MIRROR_SHIP_STEERING_HORIZONTAL ? rawRight : rawLeft;
+		const bool right = MIRROR_SHIP_STEERING_HORIZONTAL ? rawLeft : rawRight;
 		const bool down = occupier.isKeyPressed( key_down );
 		const bool space = occupier.isKeyPressed( key_action3 );	
 		const bool inv = occupier.isKeyPressed( key_inventory );

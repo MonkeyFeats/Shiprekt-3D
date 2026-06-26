@@ -750,7 +750,7 @@ void UpdateAttachedSeatTransform(CBlob@ this, Blob3D@ blob3d)
 	}
 
 	Vec3f seatPos = getNet().isClient() ? seatBlob3d.getRenderPosition() : seatBlob3d.getPosition();
-	if (seat.hasTag("flak"))
+	if (seat.hasTag("flak") || seat.hasTag("harpoon"))
 	{
 		const f32 seatAngle = seat.get_f32("angle");
 		this.set_f32(HUMAN_SEAT_RENDER_YAW, seatAngle);

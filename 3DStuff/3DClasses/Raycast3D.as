@@ -919,6 +919,11 @@ namespace Raycast3D
 			return target.getTeamNum() == caller.getTeamNum();
 		}
 
+		if (target.hasTag("harpoon"))
+		{
+			return target.getTeamNum() == caller.getTeamNum();
+		}
+
 		if (target.exists("seatEnabled"))
 		{
 			return false;
@@ -938,6 +943,11 @@ namespace Raycast3D
 		if (target.hasTag("flak"))
 		{
 			return "Control Flak";
+		}
+
+		if (target.hasTag("harpoon"))
+		{
+			return "Control Harpoon";
 		}
 
 		string label = target.get_string("seat label");

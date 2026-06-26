@@ -444,8 +444,35 @@ void onTick ( CBlob@ this )
 				blob3d.shape.Init(@blob3d);
 				break;
 			}
-			case Block::FLAK:
 			case Block::HARPOON:
+			{
+				blob3d.Name = "harpoon";
+				LoadBlockObjMesh(blob3d.mesh, "FlakBase.obj");
+				blob3d.HasMesh = true;
+
+				Blob3D HarpoonGun(Vec3f(0), 6, 2.0f);
+				if ( HarpoonGun !is null )
+				{
+					HarpoonGun.Name = "harpoon_gun";
+					LoadBlockObjMesh(HarpoonGun.mesh, "FlakTopper.obj");
+					HarpoonGun.HasMesh = true;
+					blob3d.AddChild(@HarpoonGun);
+
+					Blob3D HarpoonHead(Vec3f(0.0f, 0.0f, 8.0f), 6, 2.0f);
+					if ( HarpoonHead !is null )
+					{
+						HarpoonHead.Name = "harpoon_loaded_head";
+						LoadBlockObjMesh(HarpoonHead.mesh, "HarpoonHead.obj");
+						HarpoonHead.HasMesh = true;
+						HarpoonGun.AddChild(@HarpoonHead);
+					}
+				}
+
+				@blob3d.shape = BoundingBox(Vec3f(-8, -6.8, -8), Vec3f(8, 0, 8), blob3d.transform.Position);
+				blob3d.shape.Init(@blob3d);
+				break;
+			}
+			case Block::FLAK:
 			case Block::CANNON:
 			case Block::LAUNCHER:			
 			{

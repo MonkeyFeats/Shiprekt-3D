@@ -19,7 +19,7 @@ void PlaceDetachedHumanAtSeat(CBlob@ seat, CBlob@ detached)
 	}
 
 	f32 seatYaw = seat.getAngleDegrees();
-	if (seat.hasTag("flak"))
+	if (seat.hasTag("flak") || seat.hasTag("harpoon"))
 	{
 		seatYaw = seat.get_f32("angle");
 	}

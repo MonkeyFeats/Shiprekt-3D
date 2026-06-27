@@ -11,6 +11,7 @@
 #include "OceanWave.as"
 #include "Particle3D.as"
 #include "TileCommon.as"
+#include "BuildWheelMenuCommon.as"
 
 const f32 HUMAN_WATER_SURFACE_DEADBAND = 5.2f;
 const f32 HUMAN_WATER_EXIT_HEIGHT = 2.0f;
@@ -105,7 +106,10 @@ void onTick(CMovement@ this)
 	shape.inWater = inwater;
 	const bool underWaterSurface = inwater && waterDepth > HUMAN_WATER_SURFACE_DEADBAND;
 	const bool atWaterSurface = inwater && waterDepth >= -HUMAN_WATER_SURFACE_DEADBAND && waterDepth <= HUMAN_WATER_JUMP_DEPTH;
-	const bool canControl = serverControls || (localControls && c !is null && d !is null && isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !block_menu && !getHUD().hasButtons() && !blob.get_bool("build menu open"));
+	CHUD@ hud = getHUD();
+	const bool uiUsingMouse = get_active_wheel_menu() !is null || block_menu || blob.get_bool("build menu open") || (hud !is null && (hud.hasButtons() || hud.hasMenus()));
+	const bool canLocalControl = localControls && c !is null && d !is null && isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !uiUsingMouse;
+	const bool canControl = (serverControls && !localControls) || canLocalControl;
 	const bool wasInWater = blob.get_bool(HUMAN_WAS_IN_WATER);
 	if (inwater && !wasInWater && rb.getVelocity().y < -3.5f)
 	{

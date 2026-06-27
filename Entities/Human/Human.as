@@ -13,6 +13,7 @@
 #include "World.as"
 #include "HumanGrounding.as"
 #include "Particle3D.as"
+#include "BuildWheelMenuCommon.as"
 
 int useClickTime = 0;
 const int PUNCH_RATE = 15;
@@ -752,9 +753,9 @@ void UpdateAttachedSeatTransform(CBlob@ this, Blob3D@ blob3d)
 	Vec3f seatPos = getNet().isClient() ? seatBlob3d.getRenderPosition() : seatBlob3d.getPosition();
 	if (seat.hasTag("flak") || seat.hasTag("harpoon"))
 	{
-		const f32 seatAngle = seat.get_f32("angle");
-		this.set_f32(HUMAN_SEAT_RENDER_YAW, seatAngle);
-		Vec2f backOffset(-6.0f, 0.0f);
+		const f32 seatAngle = seat.get_f32("angle")-90;
+		this.set_f32(HUMAN_SEAT_RENDER_YAW, -seatAngle);
+		Vec2f backOffset(0.0f, -6.0f);
 		backOffset.RotateBy(seatAngle);
 		seatPos.x += backOffset.x;
 		//seatPos.y -= 2.0f;
@@ -791,7 +792,7 @@ void UpdateAttachedAim(CBlob@ this, Blob3D@ blob3d)
 		return;
 	}
 
-	if (!isWindowActive() || !isWindowFocused() || Menu::getMainMenu() !is null || block_menu || getHUD().hasButtons() || this.get_bool("build menu open"))
+	if (ShouldSuspendHumanMouseAim(this))
 	{
 		return;
 	}
@@ -827,6 +828,18 @@ void UpdateAttachedAim(CBlob@ this, Blob3D@ blob3d)
 	blob3d.transform.Orientation.y = Maths::Clamp(blob3d.transform.Orientation.y + mouseDelta.y * 0.15f, -60.0f, 60.0f);
 
 	this.set_f32("dir_x", blob3d.transform.Orientation.x);
+}
+
+bool ShouldSuspendHumanMouseAim(CBlob@ this)
+{
+	CHUD@ hud = getHUD();
+	return !isWindowActive()
+		|| !isWindowFocused()
+		|| Menu::getMainMenu() !is null
+		|| get_active_wheel_menu() !is null
+		|| block_menu
+		|| (hud !is null && (hud.hasButtons() || hud.hasMenus()))
+		|| this.get_bool("build menu open");
 }
 
 void UpdateFreeHumanShapeRotation(CBlob@ this, Blob3D@ blob3d)
@@ -874,6 +887,11 @@ void ClearHumanShipRenderOffset(CBlob@ this, Blob3D@ blob3d)
 
 void UpdateAimPosition3D(CBlob@ this)
 {
+	if (!this.isMyPlayer() || ShouldSuspendHumanMouseAim(this))
+	{
+		return;
+	}
+
 	Raycast3D::Ray3D ray;
 	if (!Raycast3D::GetPlayerAimRay(this, ray))
 	{

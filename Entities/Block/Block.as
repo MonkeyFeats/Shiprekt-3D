@@ -458,7 +458,7 @@ void onTick ( CBlob@ this )
 					HarpoonGun.HasMesh = true;
 					blob3d.AddChild(@HarpoonGun);
 
-					Blob3D HarpoonHead(Vec3f(0.0f, 0.0f, 8.0f), 6, 2.0f);
+					Blob3D HarpoonHead(Vec3f(4.0f, 11.0f, 0.0f), 6, 2.0f);
 					if ( HarpoonHead !is null )
 					{
 						HarpoonHead.Name = "harpoon_loaded_head";

@@ -13,7 +13,8 @@ const f32 harpoon_grapple_throw_speed = 20.0f;
 const f32 harpoon_grapple_force = 2.0f;
 const f32 harpoon_grapple_accel_limit = 1.5f;
 const f32 harpoon_grapple_stiffness = 0.1f;
-const Vec3f HARPOON_LOADED_HEAD_POSITION(0.0f, 0.0f, 8.0f);
+const u8 HARPOON_ROPE_TRAIL_POINTS = 14;
+const Vec3f HARPOON_LOADED_HEAD_POSITION(4.0f, 11.0f, 0.0f);
 const string HARPOON_HEAD_CHILD = "harpoon_projectile_head";
 const string HARPOON_GUN_CHILD = "harpoon_gun";
 const string HARPOON_LOADED_HEAD_CHILD = "harpoon_loaded_head";
@@ -826,7 +827,7 @@ Particle3D@ EnsureHarpoonRope3D(CBlob@ this)
 	rope.persistent = true;
 	rope.lifetime = 999999.0f;
 	rope.textureName = "Rope.png";
-	rope.maxTrailPoints = 2;
+	rope.maxTrailPoints = HARPOON_ROPE_TRAIL_POINTS;
 	rope.trailTextureLength = 16.0f;
 	rope.startSize = 2.2f;
 	rope.endSize = 2.2f;
@@ -866,6 +867,54 @@ Vec3f GetHarpoonGrapplePoint3D(CBlob@ this, HarpoonInfo@ harpoon)
 	}
 
 	return GetRenderedParticlePosition(this, harpoon.grapple_pos, 8.0f);
+}
+
+void SetHarpoonRopeTrailPoints(CBlob@ this, Particle3D@ rope, Vec3f basePoint, Vec3f grapplePoint, HarpoonInfo@ harpoon)
+{
+	if (rope is null)
+		return;
+
+	rope.trailPoints.clear();
+
+	Vec3f ropeVector = grapplePoint - basePoint;
+	const f32 length = ropeVector.Length();
+	if (length <= 0.001f)
+	{
+		rope.trailPoints.push_back(basePoint);
+		rope.trailPoints.push_back(grapplePoint);
+		return;
+	}
+
+	Vec3f forward = ropeVector / length;
+	Vec3f side = Cross(Vec3f(0.0f, 1.0f, 0.0f), forward);
+	if (side.LengthSquared() <= 0.0001f)
+	{
+		side = Vec3f(1.0f, 0.0f, 0.0f);
+	}
+	else
+	{
+		side.Normalize();
+	}
+
+	const bool inAir = harpoon !is null && harpoon.grapple_id == 0xffff;
+	const f32 phase = getGameTime() * 0.26f + this.getNetworkID() * 0.17f;
+	const f32 wobble = inAir ? Maths::Clamp(length * 0.018f, 1.0f, 5.0f) : 0.0f;
+	const f32 sag = inAir ? Maths::Clamp(length * 0.012f, 0.0f, 3.5f) : 0.0f;
+
+	for (uint i = 0; i < HARPOON_ROPE_TRAIL_POINTS; i++)
+	{
+		const f32 t = f32(i) / f32(HARPOON_ROPE_TRAIL_POINTS - 1);
+		Vec3f point = basePoint + ropeVector * t;
+		if (inAir && i > 0 && i + 1 < HARPOON_ROPE_TRAIL_POINTS)
+		{
+			const f32 envelope = Maths::Sin(t * Maths::Pi);
+			const f32 wave = Maths::Sin(t * Maths::Pi * 3.0f + phase);
+			const f32 fineWave = Maths::Sin(t * Maths::Pi * 7.0f + phase * 1.35f);
+			point += side * (wave * 0.72f + fineWave * 0.28f) * wobble * envelope;
+			point.y -= Maths::Sin(t * Maths::Pi) * sag;
+		}
+		rope.trailPoints.push_back(point);
+	}
 }
 
 void ClearHarpoonVisuals3D(CBlob@ this)
@@ -910,9 +959,7 @@ void UpdateHarpoonVisuals3D(CBlob@ this, HarpoonInfo@ harpoon)
 	{
 		rope.age = 0.0f;
 		rope.position = basePoint;
-		rope.trailPoints.clear();
-		rope.trailPoints.push_back(basePoint);
-		rope.trailPoints.push_back(grapplePoint);
+		SetHarpoonRopeTrailPoints(this, rope, basePoint, grapplePoint, harpoon);
 		rope.size = 2.2f;
 		rope.startSize = rope.size;
 		rope.endSize = rope.size;

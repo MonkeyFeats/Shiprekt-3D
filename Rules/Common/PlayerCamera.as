@@ -6,6 +6,7 @@
 
 #include "Camera3D.as"
 #include "Spectator.as"
+#include "BuildWheelMenuCommon.as"
 
 int deathTime = 0;
 Vec3f deathLock;
@@ -17,6 +18,11 @@ const f32 THIRD_PERSON_SEAT_OFFSET_X = 0.0f;
 const f32 THIRD_PERSON_SEAT_OFFSET_Y = 20.0f;
 const f32 THIRD_PERSON_SEAT_OFFSET_Z = -40.0f;
 bool staging = false;	
+
+bool IsWheelMenuOpen()
+{
+	return get_active_wheel_menu() !is null;
+}
 
 void onInit(CRules@ this)
 {	
@@ -359,7 +365,7 @@ void Spectator(CRules@ this)
 		        }
 		    }
 
-		    if(isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !getHUD().hasButtons())
+		    if(isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !IsWheelMenuOpen() && !getHUD().hasButtons() && !getHUD().hasMenus())
 			{	
 
 				Vec2f ScrMid = getDriver().getScreenCenterPos();
@@ -546,7 +552,7 @@ void FollowTarget(CRules@ this, CBlob@ lp)
 			camera.setPosition(eyePos);
 			camera.setRotation(dir);
 
-		    if(isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !getHUD().hasButtons() && !player.getBlob().get_bool( "build menu open" ))
+		    if(isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !IsWheelMenuOpen() && !getHUD().hasButtons() && !getHUD().hasMenus() && !player.getBlob().get_bool( "build menu open" ))
 			{
 				CControls@ controls = getControls();
 
@@ -595,7 +601,7 @@ void FollowTarget(CRules@ this, CBlob@ lp)
 			off.yzRotateBy(dir.y);
 			off.xzRotateBy(dir.x);
 
-		    if(isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !getHUD().hasButtons() && !player.getBlob().get_bool( "build menu open" ))
+		    if(isWindowActive() && isWindowFocused() && Menu::getMainMenu() is null && !IsWheelMenuOpen() && !getHUD().hasButtons() && !getHUD().hasMenus() && !player.getBlob().get_bool( "build menu open" ))
 			{
 				CControls@ controls = getControls();
 

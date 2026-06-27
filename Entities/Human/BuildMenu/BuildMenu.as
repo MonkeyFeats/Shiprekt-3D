@@ -46,7 +46,7 @@ void onInit(CRules@ rules)
 		IconWheelMenuEntry Flak("flak");
 		Flak.visible_name = getTranslatedString("Flak");
 		Flak.texture_name = "Blocks.png";
-		Flak.frame = 12;
+		Flak.frame = Block::FLAK;
 		Flak.frame_size = Vec2f(32.0f, 32.0f);
 		Flak.scale = 0.75f;
 		Flak.offset = Vec2f(0.0f, -3.0f);

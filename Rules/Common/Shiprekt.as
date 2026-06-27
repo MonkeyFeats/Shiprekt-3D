@@ -163,10 +163,94 @@ void onNewPlayerJoin( CRules@ this, CPlayer@ player )
 	player.server_setTeamNum(0);
 }
 
+int GetChatCommandAutoTeam(CRules@ this)
+{
+	const int teamsCount = this.getTeamsNum();
+	int[] teamPlayers;
+	for (int i = 0; i < teamsCount; i++)
+	{
+		teamPlayers.push_back(getMothership(i) is null ? 1000 : 0);
+	}
+
+	for (int i = 0; i < getPlayersCount(); i++)
+	{
+		CPlayer@ p = getPlayer(i);
+		if (p is null)
+			continue;
+
+		const int pteam = p.getTeamNum();
+		if (pteam >= 0 && pteam < teamsCount)
+		{
+			teamPlayers[pteam]++;
+		}
+	}
+
+	int bestTeam = 0;
+	int bestCount = 10000;
+	for (int i = 0; i < teamsCount; i++)
+	{
+		if (teamPlayers[i] < bestCount)
+		{
+			bestTeam = i;
+			bestCount = teamPlayers[i];
+		}
+	}
+
+	return bestTeam;
+}
+
 bool onServerProcessChat( CRules@ this, const string& in text_in, string& out text_out, CPlayer@ player )
 {
 	if (player is null )
 		return true;
+
+	if (text_in.substr(0, 1) == "!")
+	{
+		string[]@ tokens = text_in.split(" ");
+		if (tokens.length > 0 && (tokens[0] == "!team" || tokens[0] == "!changeteam"))
+		{
+			if (!(sv_test || player.isMod()))
+			{
+				client_AddToChat("Only moderators can use !team.", SColor(255, 255, 80, 80));
+				return false;
+			}
+
+			if (tokens.length < 2)
+			{
+				client_AddToChat("Usage: !team <0-" + (this.getTeamsNum() - 1) + "|spec|auto>", SColor(255, 255, 200, 0));
+				return false;
+			}
+
+			int team = 0;
+			if (tokens[1] == "spec" || tokens[1] == "spectator")
+			{
+				team = this.getSpectatorTeamNum();
+			}
+			else if (tokens[1] == "auto")
+			{
+				team = GetChatCommandAutoTeam(this);
+			}
+			else
+			{
+				team = parseInt(tokens[1]);
+				if (team < 0 || team >= this.getTeamsNum())
+				{
+					client_AddToChat("Team must be 0-" + (this.getTeamsNum() - 1) + ", spec, or auto.", SColor(255, 255, 200, 0));
+					return false;
+				}
+			}
+
+			player.server_setTeamNum(team);
+			CBlob@ blob = player.getBlob();
+			if (blob !is null && team >= 0)
+			{
+				blob.server_setTeamNum(team);
+			}
+
+			client_AddToChat("Changed " + player.getUsername() + " to team " + (team == this.getSpectatorTeamNum() ? "spectator" : "" + team) + ".");
+			return false;
+		}
+	}
 
 	if ( player.isMod() && text_in.substr(0, 1) == "!" )
 	{
@@ -276,16 +360,6 @@ bool onServerProcessChat( CRules@ this, const string& in text_in, string& out te
 
 			if (tokens.length > 1)
 			{
-				if (tokens[0] == "!team")
-				{
-					int team = parseInt(tokens[1]);
-					player.getBlob().server_setTeamNum(team);
-					//player.server_setTeamNum( parseInt( tokens[1] ));
-					//if ( player.getBlob() !is null )
-					//	player.getBlob().server_Die();
-					
-					return false;
-				}
 			}
 		}
 	}

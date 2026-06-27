@@ -438,8 +438,6 @@ void onTick ( CBlob@ this )
 				LoadBlockObjMesh(blob3d.mesh, "Coupling.obj");
 				blob3d.HasMesh = true;
 
-
-
 				@blob3d.shape = BoundingBox(Vec3f(-8, -6.8, -8), Vec3f(8, 0, 8), blob3d.transform.Position);
 				blob3d.shape.Init(@blob3d);
 				break;
@@ -563,7 +561,35 @@ void onTick ( CBlob@ this )
 				break;
 			}
 			//case BOMB:
-			//case POINTDEFENSE:
+			case Block::POINTDEFENSE:
+			{
+				blob3d.Name = "point_defense";
+				LoadBlockObjMesh(blob3d.mesh, "FlakBase.obj");
+				blob3d.HasMesh = true;
+
+				Blob3D PointBall(Vec3f(0), 6, 2.0f);
+				if ( PointBall !is null )
+				{
+					PointBall.Name = "point_defense_ball";
+					LoadBlockObjMesh(PointBall.mesh, "PointDefense.obj");
+					PointBall.HasMesh = true;
+					blob3d.AddChild(@PointBall);
+
+					Blob3D PointBarrel(Vec3f(0), 6, 2.0f);
+					if ( PointBarrel !is null )
+					{
+						PointBarrel.Name = "PointBarrel";
+						LoadBlockObjMesh(PointBarrel.mesh, "FlakBarrel.obj");
+						PointBarrel.HasMesh = true;
+						PointBall.AddChild(@PointBarrel);
+					}
+				}
+
+				@blob3d.shape = BoundingBox(Vec3f(-8, -6.8, -8), Vec3f(8, 0, 8), blob3d.transform.Position);
+				blob3d.shape.Init(@blob3d);
+				blob3d.AddExtraShape(BoundingSphere(5.0f), Vec3f(0.0f, 10.0f, 0.0f));
+				break;
+			}
 			//case HARVESTER:
 			//case :
 			//

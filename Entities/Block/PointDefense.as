@@ -2,15 +2,18 @@
 #include "IslandsCommon.as"
 #include "AccurateSoundPlay.as"
 #include "Particle3D.as"
+#include "Blob3D.as"
+#include "Raycast3D.as"
 
-const f32 PROJECTILE_SPEED = 9.0f;
-const f32 PROJECTILE_SPREAD = 2.25;
 const int FIRE_RATE = 50;
-const f32 PROJECTILE_RANGE = 100.0f;
 const u8 REFILL_AMMOUNT = 10;//every second
-const f32 AUTO_RADIUS = 100.0f;
-
-Random _shotspreadrandom(0x11598); //clientside
+const f32 AUTO_RADIUS = 160.0f;
+const f32 POINT_DEFENSE_BARREL_HEIGHT = 12.0f;
+const f32 POINT_DEFENSE_BARREL_FORWARD = 11.0f;
+const f32 POINT_DEFENSE_TARGET_HEIGHT = 12.0f;
+const string POINT_DEFENSE_AIM_X = "point defense aim x";
+const string POINT_DEFENSE_AIM_Y = "point defense aim y";
+const string POINT_DEFENSE_AIM_Z = "point defense aim z";
 
 void onInit( CBlob@ this )
 {
@@ -33,6 +36,9 @@ void onInit( CBlob@ this )
 	}
 	
 	this.set_u32("fire time", 0);
+	this.set_f32(POINT_DEFENSE_AIM_X, 1.0f);
+	this.set_f32(POINT_DEFENSE_AIM_Y, 0.0f);
+	this.set_f32(POINT_DEFENSE_AIM_Z, 0.0f);
 	
 	CSprite@ sprite = this.getSprite();
     CSpriteLayer@ layer = sprite.addSpriteLayer( "weapon", 16, 16 );
@@ -53,15 +59,8 @@ void onTick( CBlob@ this )
 		return;
 	
 	u32 gameTime = getGameTime();
-	AttachmentPoint@ seat = this.getAttachmentPoint(0);
-	CBlob@ occupier = seat.getOccupied();
 	u16 thisID = this.getNetworkID();
-	
-	CSprite@ sprite = this.getSprite();
-    CSpriteLayer@ laser = sprite.getSpriteLayer( "laser" );
-	if ( laser !is null && this.get_u32("fire time") + 5.0f < gameTime )
-		sprite.RemoveSpriteLayer("laser");
-	
+
 	Auto( this );
 	
 	//ammo reload when docked
@@ -94,6 +93,8 @@ void onTick( CBlob@ this )
 			}
 		}
 	}
+
+	UpdatePointDefenseBlob3D(this);
 }
 
 void Auto( CBlob@ this )
@@ -103,10 +104,10 @@ void Auto( CBlob@ this )
 		
 	CBlob@[] blobsInRadius;
 	Vec2f pos = this.getPosition();
-	int thisColor = this.getShape().getVars().customData;
 	f32 minDistance = 9999999.9f;
 	bool shoot = false;
 	Vec2f shootVec = Vec2f(0, 0);
+	Vec3f shootVec3D;
 	
 	u16 hitBlobNetID = 0;
 	Vec2f bPos = Vec2f(0, 0);
@@ -115,23 +116,20 @@ void Auto( CBlob@ this )
 	u16 ammo = this.get_u16( "ammo" );
 	if ( getNet().isServer() )
 		this.get( "ammo", ammo );
+	if (ammo == 0 || !canShootAuto(this))
+		return;
 
 	if ( this.getMap().getBlobsInRadius( this.getPosition(), AUTO_RADIUS, @blobsInRadius ) )
 	{
 		for ( uint i = 0; i < blobsInRadius.length; i++ )
 		{
 			CBlob @b = blobsInRadius[i];
-			if ( b.getTeamNum() != this.getTeamNum() 
-					&& ( b.getName() == "human"|| b.hasTag( "rocket" ) ||  b.hasTag( "cannonball" ) || b.hasTag( "bullet" ) || b.hasTag( "flak shell" ) ) )
+			if ( b.getTeamNum() != this.getTeamNum() && IsPointDefenseTarget(b) )
 			{
 				bPos = b.getPosition();
 				
-				Island@ targetIsland;
-				if ( b.getName() == "block" )
-					@targetIsland = getIsland( b.getShape().getVars().customData );
-				else
+				if ( b.getName() != "block" )
 				{
-					@targetIsland = getIsland(b);
 					if ( b.isAttached() )
 					{
 						AttachmentPoint@ humanAttach = b.getAttachmentPoint(0);
@@ -141,20 +139,18 @@ void Auto( CBlob@ this )
 					}
 				}
 				
+				Vec3f targetPoint = GetPointDefenseTargetPoint3D(b);
+				Vec3f barrelPoint = GetPointDefenseBarrelBase3D(this);
+				Vec3f aimVec3D = targetPoint - barrelPoint;
+				f32 distance3D = aimVec3D.Length();
 				Vec2f aimVec = bPos - pos;
-				f32 distance = aimVec.Length();
+				f32 distance = Maths::Max(distance3D, aimVec.Length());
 
-				int bColor = 0;
-				
-				bool merged = bColor != 0 && thisColor == bColor;
-				
-				if ( b.getName() == "human" )
-					distance += 80.0f;//humans have lower priority
-				
-				if ( distance < minDistance && isClearShot( this, aimVec, merged ) )
+				if ( distance < minDistance && isClearShot3D( this, b, barrelPoint, targetPoint ) )
 				{
 					shoot = true;					
 					shootVec = aimVec;
+					shootVec3D = aimVec3D;
 					minDistance = distance;
 					hitBlobNetID = b.getNetworkID();
 				}
@@ -164,9 +160,9 @@ void Auto( CBlob@ this )
 	
 	if ( shoot )
 	{	
-		if ( getNet().isServer() && canShootAuto( this ) )
+		if ( getNet().isServer() )
 		{		
-			Fire( this, shootVec, hitBlobNetID );
+			Fire( this, shootVec, shootVec3D, hitBlobNetID );
 		}
 	}
 }
@@ -176,57 +172,44 @@ bool canShootAuto( CBlob@ this, bool manual = false )
 	return this.get_u32("fire time") + FIRE_RATE < getGameTime();
 }
 
-bool isClearShot( CBlob@ this, Vec2f aimVec, bool targetMerged = false )
+bool IsPointDefenseTarget(CBlob@ target)
 {
-	Vec2f pos = this.getPosition();
-	const f32 distanceToTarget = Maths::Max( aimVec.Length() - 8.0f, 0.0f );
-	HitInfo@[] hitInfos;
-	CMap@ map = getMap();
-	
-	Vec2f offset = aimVec;
-	offset.Normalize();
-	offset *= 7.0f;
+	return target !is null
+		&& (target.hasTag("rocket")
+			|| target.hasTag("cannonball")
+			|| target.hasTag("bullet")
+			|| target.hasTag("flak shell")
+			|| target.hasTag("projectile"));
+}
 
-	map.getHitInfosFromRay( pos + offset.RotateBy(30), -aimVec.Angle(), distanceToTarget, this, @hitInfos );
-	map.getHitInfosFromRay( pos + offset.RotateBy(-60), -aimVec.Angle(), distanceToTarget, this, @hitInfos );
-	if ( hitInfos.length > 0 )
+bool isClearShot3D(CBlob@ this, CBlob@ target, Vec3f origin, Vec3f targetPoint)
+{
+	Vec3f aimVector = targetPoint - origin;
+	const f32 distance = aimVector.Length();
+	if (distance <= 0.001f)
+		return false;
+
+	aimVector = aimVector / distance;
+
+	Raycast3D::Ray3D ray(origin, aimVector);
+	Raycast3D::RaycastHit3D hit;
+	const f32 maxBlockDistance = Maths::Max(0.0f, distance - 1.5f);
+	if (Raycast3D::RaycastBlockTarget(ray, 1.0f, maxBlockDistance, this, hit))
 	{
-		//HitInfo objects are sorted, first come closest hits
-		for ( uint i = 0; i < hitInfos.length; i++ )
-		{
-			HitInfo@ hi = hitInfos[i];
-			CBlob@ b = hi.blob;	  
-			if( b is null || b is this ) continue;
-
-			int thisColor = this.getShape().getVars().customData;
-			int bColor = b.getShape().getVars().customData;
-			bool sameIsland = bColor != 0 && thisColor == bColor;
-			
-			const int blockType = b.getSprite().getFrame();
-
-			bool canShootSelf = targetMerged && hi.distance > distanceToTarget * 0.7f;
-			
-			bool isOwnCore = Block::isCore( blockType ) && this.getTeamNum() == b.getTeamNum();
-		
-			//if ( sameIsland || targetMerged ) print ( "" + ( sameIsland ? "sameisland; " : "" ) + ( targetMerged ? "targetMerged; " : "" ) );
-			
-			if ( b.hasTag("weapon") || Block::isSolid( blockType )
-					|| ( b.getName() == "block" && b.getShape().getVars().customData > 0 && ( Block::isSolid( blockType ) ) && sameIsland && !canShootSelf ) )
-			{
-				//print ( "not clear " + ( b.getName() == "block" ? " (block) " : "" ) + ( !canShootSelf ? "!canShootSelf; " : "" )  );
-				return false;
-			}
-		}
+		return hit.blob is target;
 	}
 
 	return true;
 }
 
-void Fire( CBlob@ this, Vec2f aimVector, const u16 hitBlobNetID )
+void Fire( CBlob@ this, Vec2f aimVector, Vec3f aimVector3D, const u16 hitBlobNetID )
 {
 	CBitStream params;
 	params.write_netid( hitBlobNetID );
 	params.write_Vec2f( aimVector );
+	params.write_f32( aimVector3D.x );
+	params.write_f32( aimVector3D.y );
+	params.write_f32( aimVector3D.z );
 	
 	this.SendCommand( this.getCommandID("fire"), params );
 }
@@ -241,12 +224,134 @@ void Rotate( CBlob@ this, Vec2f aimVector )
 	}
 }
 
+void SetPointDefenseAim(CBlob@ this, Vec3f aimVector)
+{
+	if (aimVector.LengthSquared() <= 0.001f)
+		return;
+
+	aimVector = aimVector.Normalize();
+	this.set_f32(POINT_DEFENSE_AIM_X, aimVector.x);
+	this.set_f32(POINT_DEFENSE_AIM_Y, aimVector.y);
+	this.set_f32(POINT_DEFENSE_AIM_Z, aimVector.z);
+}
+
+Vec3f GetPointDefenseAim(CBlob@ this)
+{
+	Vec3f aim(
+		this.get_f32(POINT_DEFENSE_AIM_X),
+		this.get_f32(POINT_DEFENSE_AIM_Y),
+		this.get_f32(POINT_DEFENSE_AIM_Z)
+	);
+	if (aim.LengthSquared() <= 0.001f)
+	{
+		return Vec3f(1.0f, 0.0f, 0.0f);
+	}
+	return aim.Normalize();
+}
+
+Vec3f GetPointDefenseBarrelBase3D(CBlob@ this)
+{
+	Blob3D@ blob3d;
+	if (this !is null && this.get("blob3d", @blob3d) && blob3d !is null)
+	{
+		Vec3f pos = getNet().isClient() ? blob3d.getRenderPosition() : blob3d.getPosition();
+		pos.y += POINT_DEFENSE_BARREL_HEIGHT;
+		return pos;
+	}
+
+	return Vec3f(this.getPosition().x, POINT_DEFENSE_BARREL_HEIGHT, this.getPosition().y);
+}
+
+Vec3f GetPointDefenseBarrelTip3D(CBlob@ this)
+{
+	return GetPointDefenseBarrelBase3D(this) + GetPointDefenseAim(this) * POINT_DEFENSE_BARREL_FORWARD;
+}
+
+Vec3f GetPointDefenseTargetPoint3D(CBlob@ target)
+{
+	if (target is null)
+		return Vec3f();
+
+	Blob3D@ target3d;
+	if (target !is null && target.get("blob3d", @target3d) && target3d !is null)
+	{
+		return getNet().isClient() ? target3d.getRenderPosition() : target3d.getPosition();
+	}
+
+	Vec2f pos = target.getPosition();
+	f32 y = POINT_DEFENSE_TARGET_HEIGHT;
+	if (target.exists("bullet 3d position y"))
+	{
+		y = target.get_f32("bullet 3d position y");
+	}
+	else if (target.hasTag("rocket") || target.hasTag("cannonball") || target.hasTag("flak shell"))
+	{
+		y = 10.0f;
+	}
+	return Vec3f(pos.x, y, pos.y);
+}
+
+void UpdatePointDefenseBlob3D(CBlob@ this)
+{
+	if (!getNet().isClient())
+		return;
+
+	Blob3D@ blob3d;
+	if (!this.get("blob3d", @blob3d) || blob3d is null)
+		return;
+
+	Blob3D@ ball = blob3d.getChild("point_defense_ball");
+	if (ball is null)
+		return;
+
+	Vec3f aim = GetPointDefenseAim(this);
+	Vec2f aimXZ(aim.x, aim.z);
+	if (aimXZ.LengthSquared() > 0.001f)
+	{
+		const f32 yaw = -aimXZ.Angle() - this.getAngleDegrees();
+		ball.setLocalMayaRotation(Vec3f(0.0f, yaw, 0.0f));
+	}
+
+	Blob3D@ barrel = ball.getChild("PointBarrel");
+	if (barrel !is null)
+	{
+		const f32 pitch = -Maths::ATan2(aim.y, Maths::Max(0.001f, Maths::Sqrt(aim.x * aim.x + aim.z * aim.z))) * 180.0f / Maths::Pi;
+		barrel.LocalTransform.Orientation.y = pitch;
+	}
+}
+
+void EmitPointDefenseLaser3D(CBlob@ this, CBlob@ hitBlob)
+{
+	if (!getNet().isClient() || hitBlob is null)
+		return;
+
+	Vec3f start = GetPointDefenseBarrelTip3D(this);
+	Vec3f end = GetPointDefenseTargetPoint3D(hitBlob);
+
+	Particle3D@ laser = Particle3D();
+	laser.pointTrail = true;
+	laser.uniformTrail = true;
+	laser.IsStatic = false;
+	laser.lifetime = 6.0f;
+	laser.textureName = "pixel";
+	laser.maxTrailPoints = 2;
+	laser.startSize = 1.25f;
+	laser.endSize = 0.15f;
+	laser.size = laser.startSize;
+	laser.startColor = SColor(235, 80, 180, 255);
+	laser.endColor = SColor(0, 50, 120, 255);
+	laser.trailPoints.push_back(start);
+	laser.trailPoints.push_back(end);
+	EmitParticle3D(laser);
+}
+
 void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
 {
     if (cmd == this.getCommandID("fire"))
     {
 		CBlob@ hitBlob = getBlobByNetworkID( params.read_netid() );
 		Vec2f aimVector = params.read_Vec2f();
+		Vec3f aimVector3D(params.read_f32(), params.read_f32(), params.read_f32());
 		
 		if (hitBlob is null)
 			return;
@@ -272,6 +377,9 @@ void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
 		
 		if (hitBlob !is null)
 		{		
+			SetPointDefenseAim(this, aimVector3D);
+			UpdatePointDefenseBlob3D(this);
+
 			if ( isServer )
 			{
 				f32 damage = getDamage( hitBlob );
@@ -281,28 +389,10 @@ void onCommand( CBlob@ this, u8 cmd, CBitStream @params )
 			Rotate( this, aimVector ); 
 			shotParticles(this, pos + aimVector*9, aimVector.Angle());
 			directionalSoundPlay( "Laser1.ogg", pos, 1.0f );
-			
-			Vec2f barrelPos = pos + Vec2f(1,0).RotateBy(aimVector.Angle())*8;
+			EmitPointDefenseLaser3D(this, hitBlob);
+
 			if ( getNet().isClient() )//effects
 			{	
-				CSprite@ sprite = this.getSprite();
-				sprite.RemoveSpriteLayer("laser");
-				CSpriteLayer@ laser = sprite.addSpriteLayer("laser", "Beam2.png", 16, 16);
-				if (laser !is null)//partial length laser
-				{
-					Animation@ anim = laser.addAnimation( "default", 1, false );
-					int[] frames = { 0, 1, 2, 3, 4, 5 };
-					anim.AddFrames(frames);
-					laser.SetVisible(true);
-					f32 laserLength = Maths::Max(0.1f, (bPos - barrelPos).getLength() / 16.0f);						
-					laser.ResetTransform();						
-					laser.ScaleBy( Vec2f(laserLength, 0.5f) );							
-					laser.TranslateBy( Vec2f(laserLength*8.0f, 0.0f) );							
-					laser.RotateBy( -this.getAngleDegrees() - aimVector.Angle(), Vec2f());
-					laser.setRenderStyle(RenderStyle::light);
-					laser.SetRelativeZ(1);
-				}
-
 				hitEffects( hitBlob, bPos );
 			}
 		}
@@ -329,9 +419,6 @@ f32 getDamage( CBlob@ hitBlob )
 	if ( hitBlob.hasTag( "flak shell" ) )
 		return 1.0f;
 		
-	if ( hitBlob.getName() == "human" )
-		return 0.2f;
-	
 	return 0.01f;//cores, solids
 }
 
